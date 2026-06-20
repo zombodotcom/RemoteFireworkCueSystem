@@ -39,7 +39,10 @@ export function validateConfig(cfg: ShowConfig): string[] {
     groupIds.add(g.id);
     for (const m of g.members) if (!ids.has(m)) errors.push(`Group "${g.label}" references unknown channel "${m}"`);
   }
+  const seqIds = new Set<string>();
   for (const seq of cfg.sequences) {
+    if (seqIds.has(seq.id)) errors.push(`Duplicate sequence id "${seq.id}"`);
+    seqIds.add(seq.id);
     for (const step of seq.steps) {
       if (step.timeMs < 0) errors.push(`Sequence "${seq.label}" has a negative time`);
       if (step.targetType === "channel" && !ids.has(step.targetId))

@@ -69,7 +69,7 @@ describe("config", () => {
 
   it("import throws on invalid config", () => {
     expect(() => importConfig('{"version":1,"channels":[],"groups":[],"sequences":[{"id":"s","label":"x","steps":[{"timeMs":0,"targetType":"channel","targetId":"missing"}]}]}'))
-      .toThrow();
+      .toThrow(Error);
   });
 
   it("save then load returns the same config via injected storage", () => {
@@ -83,5 +83,24 @@ describe("config", () => {
   it("load returns default when storage is empty", () => {
     const s = fakeStorage();
     expect(loadConfig(s).channels).toHaveLength(32);
+  });
+
+  it("loadConfig returns default on corrupt JSON", () => {
+    const s = fakeStorage();
+    s.setItem("fw.show.config", "{not valid json");
+    expect(loadConfig(s).channels).toHaveLength(32);
+  });
+
+  it("validate flags a negative step time", () => {
+    const c = defaultConfig();
+    c.sequences.push({ id: "s1", label: "S", steps: [{ timeMs: -5, targetType: "channel", targetId: "c0" }] });
+    expect(validateConfig(c).join(" ").toLowerCase()).toContain("negative");
+  });
+
+  it("validate flags duplicate sequence ids", () => {
+    const c = defaultConfig();
+    c.sequences.push({ id: "dup", label: "A", steps: [] });
+    c.sequences.push({ id: "dup", label: "B", steps: [] });
+    expect(validateConfig(c).join(" ")).toContain("Duplicate sequence id");
   });
 });
