@@ -11,6 +11,7 @@ include_directories(${CORE}/include ${CMAKE_CURRENT_SOURCE_DIR})
 set(CORE_SRC
     ${CORE}/src/crc32.cpp
     ${CORE}/src/arming.cpp
+    ${CORE}/src/sequence.cpp
 )
 
 add_executable(test_crc32 test_crc32.cpp ${CORE_SRC})
@@ -24,3 +25,6 @@ add_test(NAME test_recent_ids COMMAND test_recent_ids)
 
 add_executable(test_arming test_arming.cpp ${CORE_SRC})
 add_test(NAME test_arming COMMAND test_arming)
+
+add_executable(test_sequence test_sequence.cpp ${CORE_SRC})
+add_test(NAME test_sequence COMMAND test_sequence)
