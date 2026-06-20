@@ -126,6 +126,19 @@ void test_heartbeat_keeps_armed() {
     CHECK_EQ((int)b.state(), (int)BoxState::ARMED);
 }
 
+void test_rejected_fire_id_can_retry_after_arm() {
+    FakeChannelDriver drv;
+    BoxController b(drv, BoxConfig{});
+    b.begin();                                          // SAFE, not armed
+    b.onCommand(cmd(MsgType::FIRE, 70, 0, 6, 0), 0);    // rejected: not armed
+    CHECK(!drv.on[6]);
+    b.setPhysicalSwitch(true, 0);
+    b.onCommand(cmd(MsgType::ARM, 71, 0, 0, 100), 0);   // now arm
+    CHECK_EQ((int)b.state(), (int)BoxState::ARMED);
+    b.onCommand(cmd(MsgType::FIRE, 70, 0, 6, 0), 0);    // SAME id 70, now armed
+    CHECK(drv.on[6]);                                   // record-on-fire: retry succeeds
+}
+
 void test_disarm_command_kills_live_output() {
     FakeChannelDriver drv;
     BoxController b = armedBox(drv, 0);
@@ -151,5 +164,6 @@ int main() {
     RUN(test_heartbeat_loss_disarms_when_idle);
     RUN(test_heartbeat_keeps_armed);
     RUN(test_disarm_command_kills_live_output);
+    RUN(test_rejected_fire_id_can_retry_after_arm);
     return REPORT();
 }

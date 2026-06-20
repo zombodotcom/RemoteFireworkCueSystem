@@ -17,6 +17,12 @@ extern "C" void app_main(void) {
 
     // Skeleton loop. Plan 3 adds: arm-switch GPIO -> setPhysicalSwitch,
     // esp_now RX -> box.onCommand, led_strip status, and the real ChannelDriver.
+
+    // SAFETY: the box never calls setSequenceRunning(true) — the heartbeat
+    // dead-man (see arming.h FIRMWARE CONTRACT) is therefore always active.
+    // Do NOT wire a controller "sequence running" flag into the box, or link-loss
+    // protection would be silently suspended. The controller runs sequences; the
+    // box only receives individual FIRE cues + continuous HEARTBEATs.
     while (true) {
         uint32_t nowMs = (uint32_t)(esp_timer_get_time() / 1000);
         box.tick(nowMs);

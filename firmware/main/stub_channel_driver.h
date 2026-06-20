@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include "channel_driver.h"
 // Build-only placeholder so the skeleton links. Plan 3 replaces this with the
 // MCP23017/PCF8575 I²C driver. Intentionally does nothing.

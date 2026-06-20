@@ -17,6 +17,7 @@ void BoxController::begin() {
 }
 
 void BoxController::energize(uint8_t ch, uint32_t nowMs) {
+    if (ch >= MAX_CHANNELS) return;          // defensive: never index out of range
     drv_.setChannel(ch, true);
     firing_[ch] = true;
     offAtMs_[ch] = nowMs + cfg_.fireMs;
@@ -40,10 +41,10 @@ void BoxController::onCommand(const CommandPacket& pkt, uint32_t nowMs) {
         case MsgType::HEARTBEAT: arm_.heartbeat(nowMs); break;
         case MsgType::ESTOP:     arm_.estop(nowMs); deenergizeAll(); break;
         case MsgType::FIRE:
-            if (pkt.boxId != cfg_.boxId) break;     // not addressed to this box
+            if (pkt.boxId != cfg_.boxId) break;       // not addressed to this box
             if (!channelInRange(pkt.targetChannel)) break;
-            if (seen_.seenOrRecord(pkt.id)) break;  // duplicate fire id
-            if (!arm_.canFire(nowMs)) break;        // all interlocks
+            if (!arm_.canFire(nowMs)) break;          // rejected: do NOT record id (retry may fire later)
+            if (seen_.seenOrRecord(pkt.id)) break;    // duplicate of an already-fired id -> no double-fire
             energize(pkt.targetChannel, nowMs);
             break;
         default: break;                             // ACK or unknown — ignore on the box
