@@ -24,7 +24,13 @@ void BoxController::energize(uint8_t ch, uint32_t nowMs) {
 }
 
 void BoxController::setPhysicalSwitch(bool on, uint32_t nowMs) {
+    BoxState oldState = arm_.state();
     arm_.setPhysicalSwitch(on, nowMs);
+    BoxState newState = arm_.state();
+    // If state changed from ARMED to something else, force all outputs off immediately.
+    if (oldState == BoxState::ARMED && newState != BoxState::ARMED) {
+        deenergizeAll();
+    }
 }
 
 void BoxController::onCommand(const CommandPacket& pkt, uint32_t nowMs) {
@@ -46,9 +52,11 @@ void BoxController::onCommand(const CommandPacket& pkt, uint32_t nowMs) {
 }
 
 void BoxController::tick(uint32_t nowMs) {
+    // Capture state before update to detect transitions caused by command/switch changes.
+    BoxState stateBeforeUpdate = arm_.state();
     arm_.update(nowMs);
     // Any transition out of ARMED forces outputs off (firmware force-off contract).
-    if (prevState_ == BoxState::ARMED && arm_.state() != BoxState::ARMED) deenergizeAll();
+    if (stateBeforeUpdate == BoxState::ARMED && arm_.state() != BoxState::ARMED) deenergizeAll();
     prevState_ = arm_.state();
     // Expire bounded fire pulses.
     for (int i = 0; i < MAX_CHANNELS; i++) {
