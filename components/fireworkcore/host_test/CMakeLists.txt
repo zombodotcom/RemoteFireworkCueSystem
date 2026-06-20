@@ -12,6 +12,7 @@ set(CORE_SRC
     ${CORE}/src/crc32.cpp
     ${CORE}/src/arming.cpp
     ${CORE}/src/sequence.cpp
+    ${CORE}/src/box_controller.cpp
 )
 
 add_executable(test_crc32 test_crc32.cpp ${CORE_SRC})
@@ -32,3 +33,6 @@ add_test(NAME test_sequence COMMAND test_sequence)
 add_executable(test_rig test_rig.cpp ${CORE_SRC} ${CORE}/wasm/sim_bindings.cpp)
 target_include_directories(test_rig PRIVATE ${CORE}/wasm)
 add_test(NAME test_rig COMMAND test_rig)
+
+add_executable(test_box_controller test_box_controller.cpp ${CORE_SRC})
+add_test(NAME test_box_controller COMMAND test_box_controller)
