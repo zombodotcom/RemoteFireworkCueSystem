@@ -14,6 +14,7 @@ set(CORE_SRC
     ${CORE}/src/sequence.cpp
     ${CORE}/src/box_controller.cpp
     ${CORE}/src/box_link.cpp
+    ${CORE}/src/show_runner.cpp
 )
 
 add_executable(test_crc32 test_crc32.cpp ${CORE_SRC})
@@ -40,3 +41,6 @@ add_test(NAME test_box_controller COMMAND test_box_controller)
 
 add_executable(test_box_link test_box_link.cpp ${CORE_SRC})
 add_test(NAME test_box_link COMMAND test_box_link)
+
+add_executable(test_show_runner test_show_runner.cpp ${CORE_SRC})
+add_test(NAME test_show_runner COMMAND test_show_runner)
