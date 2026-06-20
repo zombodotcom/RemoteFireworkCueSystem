@@ -124,6 +124,15 @@ Extends the proven packet design:
 - New message types: `ARM`, `DISARM`, `HEARTBEAT`, `ESTOP`, carrying a **nonce** so arm/disarm can't be replayed.
 - Controller addresses each box by MAC, **retries** un-ACKed cues, surfaces failures to the phone ("Box A didn't ACK channel 12").
 
+## 6.5 LED / status indication
+
+Both boxes and the controller carry status LEDs (NeoPixel/addressable). These are **safety feedback, not decoration** — at a glance you must know whether the system is hot.
+
+- **Firing box:** an **arm indicator** (red = SAFE, blue/green = ARMED) and per-channel state (idle / firing flash). A distinct color/pattern for E-STOPped and for "lost controller heartbeat." Power-on shows SAFE.
+- **Controller:** overall armed state, per-box online/offline, sequence-running indicator, and an E-STOP/fault pattern.
+- LED state is **driven by the safety state machine**, so the lights can never show ARMED while the box is actually SAFE (single source of truth).
+- LED rendering must be **non-blocking** (no `delay()` in the fire/idle path) so status updates never stall the arm-switch / E-STOP checks.
+
 ## 7. Configuration & sequences
 
 Stored as JSON in controller flash, editable from the app, persistent across reboots:
@@ -141,6 +150,18 @@ Stored as JSON in controller flash, editable from the app, persistent across reb
 ## 9. Reuse from the existing build
 
 The 4-channel single-master/single-slave firmware worked last year and is the baseline. Carried forward: CRC32 routine, `CommandPacket`/`AckPacket` structs, EEPROM arm persistence, ACK handshake, NeoPixel status patterns. This is an extension of proven code, not a rewrite.
+
+## 9.5 Improvements over the baseline code
+
+The baseline worked but is barebones. Concrete improvements to bake in:
+
+1. **Non-blocking fire pulse (safety fix).** The old slave fires with a blocking `delay(500)`, during which the loop cannot check the arm switch or E-STOP. Replace with `millis()`-scheduled pulse so the loop keeps running and a hot channel can still be aborted/disarmed mid-pulse. Critical with 32 channels + sequences.
+2. **Shared protocol header.** `CommandPacket`/`AckPacket`/CRC are currently duplicated across `master.cpp` and `slave.cpp` and can silently drift. Move to one `include/protocol.h` shared by all roles.
+3. **Recent-ID ring buffer** for dedup instead of a single `lastProcessedFireID`, so fast back-to-back cues in a sequence are deduped robustly.
+4. **ESP-NOW send-status callback + retry.** Controller confirms delivery and retries un-ACKed cues instead of fire-and-hope; failures surface to the phone.
+5. **Authenticated arm (nonce)** so ARM/DISARM cannot be replayed.
+6. **Consistent, deliberate pin modes** (baseline used `INPUT` on master arm switch vs `INPUT_PULLUP` on slave). All safety inputs explicit and consistent.
+7. **Non-blocking LED rendering** (see §6.5) — no `delay()` in the fire/idle path.
 
 ## 10. Open items (do not block design)
 
