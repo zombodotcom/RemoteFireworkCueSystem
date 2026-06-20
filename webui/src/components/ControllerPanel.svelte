@@ -13,9 +13,32 @@
   });
   onDestroy(() => conn?.stop());
 
-  // A small demo sequence: box0 ch0 @0, box0 ch1 @600, box1 ch5 @1200 (flat [timeMs,box,ch] triples)
-  const demo = [0, 0, 0,  600, 0, 1,  1200, 1, 5];
-  function runDemo() { conn?.loadSequence(demo); conn?.startSequence(); }
+  // Build a choreographed demo: an alternating left-to-right sweep across both
+  // boxes' first 8 channels, then a simultaneous finale burst. Flat
+  // [timeMs, boxId, channel] triples (the format rig_load_sequence expects).
+  function buildDemo(): number[] {
+    const steps: number[] = [];
+    let t = 0;
+    for (let ch = 0; ch < 8; ch++) {
+      steps.push(t, 0, ch); t += 150;   // box 0 sweeps
+      steps.push(t, 1, ch); t += 150;   // box 1 follows
+    }
+    t += 250;                            // brief pause, then finale
+    for (const ch of [0, 2, 4, 6]) {
+      steps.push(t, 0, ch);              // both boxes fire together
+      steps.push(t, 1, ch + 1);
+    }
+    return steps;                        // 24 cues, well under MAX_SEQ_STEPS (64)
+  }
+
+  // The demo arms the rig first so one click reliably plays a show.
+  function runDemo() {
+    conn?.setSwitch(0, true);
+    conn?.setSwitch(1, true);
+    conn?.arm();
+    conn?.loadSequence(buildDemo());
+    conn?.startSequence();
+  }
 </script>
 
 {#if conn}
