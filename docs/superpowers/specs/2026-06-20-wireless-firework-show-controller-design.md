@@ -4,6 +4,7 @@
 - **Branch:** `32ch-webui-show` (off `4channel-ssr`)
 - **Status:** Approved design, pre-implementation
 - **Supersedes:** the 4-channel single-master/single-slave build (kept as the proven baseline)
+- **Platform:** ESP32 for **both** controller and firing boxes, on **ESP-IDF v6.0** (installed at `C:\esp\v6.0.1\esp-idf`). One firmware codebase, one chip family, a role flag distinguishes controller vs box. Host unit tests build with MinGW UCRT g++ + CMake + Ninja.
 
 ## 1. Goal
 
@@ -15,7 +16,7 @@ Rebuild the remote firework cue system to:
 - Support three firing modes: **manual single cues**, **groups/macros**, and **timed sequences** (scripted show).
 - Be **safe above all else** — multiple independent interlocks, fail-safe by default.
 
-Keep ESP-NOW as the wireless link. Reuse the proven primitives from last year's working build (CRC32, packet structs, EEPROM arm persistence, ACK handshake).
+Keep ESP-NOW as the wireless link. Reuse the proven *algorithms* from last year's working build (CRC32, packet layout, ACK handshake, persisted arm state) — reimplemented as portable C++ under ESP-IDF rather than copied from the Arduino code.
 
 Out of scope for this phase: music/timecode-synced shows (leave a hook for it later).
 
@@ -31,20 +32,23 @@ Out of scope for this phase: music/timecode-synced shows (leave a hook for it la
    • runs arming state + sequence engine
    • E-STOP authority, app-heartbeat watchdog
         │  ESP-NOW (per-box MAC, retried, ACKed)
-        ├──────────────► Firing Box A (ESP8266 + I²C expander) → 16 SSR channels
-        └──────────────► Firing Box B (ESP8266 + I²C expander) → 16 SSR channels
+        ├──────────────► Firing Box A (ESP32 + I²C expander) → 16 SSR channels
+        └──────────────► Firing Box B (ESP32 + I²C expander) → 16 SSR channels
 ```
 
 The phone **proposes**, the controller **decides**, the box **verifies**. Three independent checks before any channel fires.
 
 ## 3. Hardware
 
+### Framework & MCU
+- **ESP32 on ESP-IDF v6.0 for everything** — controller and both boxes. Single firmware codebase with a compile-time/NVS **role flag** (`CONTROLLER` | `BOX`). ESP-IDF gives FreeRTOS task isolation (a high-priority safety/ESP-NOW task the web server cannot starve), native `esp_http_server`/WebSocket, `esp_now`, NVS config storage, and watchdogs.
+
 ### Controller
-- **ESP32.** Runs SoftAP + web server + ESP-NOW concurrently with headroom; more RAM/flash for the UI and config. Chosen over the ESP8266 for robustness in a safety-critical role.
+- **ESP32.** Hosts SoftAP + web server + ESP-NOW concurrently; ample RAM/flash for UI + config.
 
 ### Firing boxes (×2, identical)
-- **ESP8266 D1 mini** (reused) — "dumb but safe" endpoint.
-- **One I²C GPIO expander** per box converting 2 wires → 16 outputs, wired to the SSR board's 16 logic input pins.
+- **ESP32** — "dumb but safe" endpoint.
+- **One I²C GPIO expander** per box converting 2 wires → 16 outputs, wired to the SSR board's 16 logic input pins. **Kept even though the ESP32 has enough GPIO**, because several ESP32 pins are strapping/boot-glitch pins that must never touch an igniter; the expander gives a deterministic all-off boot state and a single-write all-off for E-STOP.
 - **Both boxes must be identical**: same expander type, same firmware, same boot-safe behavior. Two differently-behaving boxes = two things to validate and two ways to be surprised.
 
 ### Deferred hardware decision — expander + SSR polarity
@@ -57,7 +61,7 @@ Firmware abstracts this behind a **channel-driver interface** with two compile-t
 
 **Boot-safe hardware rule:** every SSR input gets a **pull resistor holding it in the OFF state**, so a floating/booting/crashed expander physically cannot fire. The expander only ever drives a pin to the active level deliberately.
 
-Owned today: ESP8266 D1 minis, 1× MCP23017, 3× PCF8575. Prototyping can proceed now with the MCP23017 + LEDs (no SSR board needed).
+Owned today: ESP8266 D1 minis (now spares/bench-LED rigs), 1× MCP23017, 3× PCF8575. **To acquire:** 3× ESP32 dev boards (1 controller + 2 boxes; prices ≈ ESP8266). The host-testable safety core (Plan 1) needs no hardware at all; box bring-up later uses an ESP32 + the MCP23017 + LEDs (no SSR/pyro).
 
 ## 4. Components & responsibilities
 
@@ -149,22 +153,22 @@ Stored as JSON in controller flash, editable from the app, persistent across reb
 
 ## 9. Reuse from the existing build
 
-The 4-channel single-master/single-slave firmware worked last year and is the baseline. Carried forward: CRC32 routine, `CommandPacket`/`AckPacket` structs, EEPROM arm persistence, ACK handshake, NeoPixel status patterns. This is an extension of proven code, not a rewrite.
+The 4-channel single-master/single-slave Arduino firmware worked last year and is the reference. Carried forward as **designs, reimplemented in portable C++ under ESP-IDF**: the CRC32 routine, the `CommandPacket`/`AckPacket` layout, the ACK handshake, persisted arm state (Arduino `EEPROM` → ESP-IDF **NVS**), and the status-LED patterns (Arduino `Adafruit_NeoPixel` → ESP-IDF `led_strip` RMT driver). Same proven logic, new framework.
 
 ## 9.5 Improvements over the baseline code
 
 The baseline worked but is barebones. Concrete improvements to bake in:
 
-1. **Non-blocking fire pulse (safety fix).** The old slave fires with a blocking `delay(500)`, during which the loop cannot check the arm switch or E-STOP. Replace with `millis()`-scheduled pulse so the loop keeps running and a hot channel can still be aborted/disarmed mid-pulse. Critical with 32 channels + sequences.
-2. **Shared protocol header.** `CommandPacket`/`AckPacket`/CRC are currently duplicated across `master.cpp` and `slave.cpp` and can silently drift. Move to one `include/protocol.h` shared by all roles.
+1. **Non-blocking fire pulse (safety fix).** The old slave fires with a blocking `delay(500)`, during which it cannot check the arm switch or E-STOP. Replace with a timer/tick-scheduled pulse (FreeRTOS task + `esp_timer`) so a hot channel can still be aborted/disarmed mid-pulse. Critical with 32 channels + sequences.
+2. **Shared protocol/safety component.** `CommandPacket`/`AckPacket`/CRC and the arming logic are duplicated across `master.cpp`/`slave.cpp` today and can silently drift. Consolidate into one portable `fireworkcore` component shared by both roles and host-tested.
 3. **Recent-ID ring buffer** for dedup instead of a single `lastProcessedFireID`, so fast back-to-back cues in a sequence are deduped robustly.
 4. **ESP-NOW send-status callback + retry.** Controller confirms delivery and retries un-ACKed cues instead of fire-and-hope; failures surface to the phone.
 5. **Authenticated arm (nonce)** so ARM/DISARM cannot be replayed.
-6. **Consistent, deliberate pin modes** (baseline used `INPUT` on master arm switch vs `INPUT_PULLUP` on slave). All safety inputs explicit and consistent.
+6. **Consistent, deliberate GPIO config** (baseline used `INPUT` on master arm switch vs `INPUT_PULLUP` on slave). All safety inputs explicitly configured (`gpio_config` with defined pull) and consistent across roles.
 7. **Non-blocking LED rendering** (see §6.5) — no `delay()` in the fire/idle path.
 
 ## 10. Open items (do not block design)
 
 - Confirm SSR polarity → finalize expander (PCF8575 vs MCP23017) and `FIRE_LEVEL`. (~2026-06-24)
-- Confirm controller ESP32 board variant on hand / to buy.
+- Buy 3× ESP32 dev boards (controller + 2 boxes); confirm exact variant (e.g. ESP32-WROOM-32 devkit).
 - Final SoftAP SSID/password and whether to add a UI passcode gate.
