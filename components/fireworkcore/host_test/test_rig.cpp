@@ -53,6 +53,48 @@ void test_idle_heartbeat_loss_disarms() {
     rig_tick(2001);                   // idle, no heartbeat since 0 -> disarm
     CHECK_EQ(rig_box_state(0), 0);
 }
+void test_sequence_fires_cues_in_order() {
+    rig_reset();
+    rig_set_switch(0, 1, 0);
+    rig_set_switch(1, 1, 0);
+    rig_heartbeat(0);
+    rig_arm(1, 0);
+    uint32_t steps[] = { 0,0,1,  100,1,5 };   // t0: box0 ch1 ; t100: box1 ch5
+    rig_load_sequence(steps, 2);
+    rig_start_sequence(0);
+    rig_heartbeat(0); rig_tick(0);
+    CHECK_EQ(rig_channel_firing(0, 1), 1);
+    CHECK_EQ(rig_channel_firing(1, 5), 0);
+    rig_heartbeat(100); rig_tick(100);
+    CHECK_EQ(rig_channel_firing(1, 5), 1);
+}
+void test_sequence_running_keeps_armed_without_heartbeat() {
+    rig_reset();
+    rig_set_switch(0, 1, 0);
+    rig_heartbeat(0);
+    rig_arm(1, 0);
+    uint32_t steps[] = { 5000,0,2 };          // far-future step keeps scheduler running
+    rig_load_sequence(steps, 1);
+    rig_start_sequence(0);
+    rig_tick(3000);                            // no heartbeat since 0, but seq running -> stays armed
+    CHECK_EQ(rig_box_state(0), 1);
+    CHECK_EQ(rig_seq_running(), 1);
+}
+void test_estop_mid_show_skips_remaining_cues() {
+    rig_reset();
+    rig_set_switch(0, 1, 0);
+    rig_heartbeat(0);
+    rig_arm(1, 0);
+    uint32_t steps[] = { 0,0,1,  200,0,2 };
+    rig_load_sequence(steps, 2);
+    rig_start_sequence(0);
+    rig_heartbeat(0); rig_tick(0);
+    CHECK_EQ(rig_channel_firing(0, 1), 1);
+    rig_estop(50);                             // kill mid-show
+    rig_tick(200);                             // second cue must NOT fire
+    CHECK_EQ(rig_channel_firing(0, 2), 0);
+    CHECK_EQ(rig_seq_running(), 0);
+}
 
 int main() {
     RUN(test_boots_safe);
@@ -61,5 +103,8 @@ int main() {
     RUN(test_fire_rejected_when_estopped);
     RUN(test_fire_rejected_out_of_range);
     RUN(test_idle_heartbeat_loss_disarms);
+    RUN(test_sequence_fires_cues_in_order);
+    RUN(test_sequence_running_keeps_armed_without_heartbeat);
+    RUN(test_estop_mid_show_skips_remaining_cues);
     return REPORT();
 }
