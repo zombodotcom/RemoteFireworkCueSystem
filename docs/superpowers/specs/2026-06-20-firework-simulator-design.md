@@ -59,19 +59,8 @@ A singleton "rig" composed entirely from existing `fireworkcore` types: one cont
 - `rig_fire(boxId, channel, nowMs)` — manual cue; honored only if that box `canFire(nowMs)` and the channel is in range and the message id is unseen.
 - `rig_load_sequence(jsonPtr)` — load a flat list of `SeqStep{timeMs, boxId, channel}` (the JS expands groups to channel steps before loading).
 - `rig_start_sequence(nowMs)` / `rig_stop_sequence(nowMs)`.
-- `rig_tick(nowMs)` — advance: (1) `update()` each box's arming; (2) if a sequence is running, pull `due(nowMs)` steps and attempt each fire; (3) expire channel pulses older than `FIRE_MS`. Mirrors the firmware loop, non-blocking.
-- `rig_snapshot_json()` — returns:
-  ```json
-  {
-    "now": 12345,
-    "controller": { "armRequested": true, "sequenceRunning": false },
-    "boxes": [
-      { "id": 0, "switchOn": true, "state": "ARMED", "estopped": false, "canFire": true,
-        "channels": [ { "firing": false, "msLeft": 0 }, ... 16 ] },
-      { "id": 1, ... }
-    ]
-  }
-  ```
+- `rig_tick(nowMs)` — advance: (1) `setSequenceRunning(scheduler.running())` + `update()` each box's arming (honors the firmware force-off/seq-flag contract); (2) if a sequence is running, pull `due(nowMs)` steps and attempt each fire; (3) expire channel pulses older than `FIRE_MS`. Mirrors the firmware loop, non-blocking.
+- **Discrete state getters** (cheap C calls the JS reads each frame to build its snapshot — avoids C++ JSON building and makes the rig trivially host-testable): `rig_box_state(box)`→0 SAFE/1 ARMED, `rig_box_switch(box)`, `rig_box_estopped(box)`, `rig_box_can_fire(box, nowMs)`, `rig_seq_running()`, `rig_channel_firing(box, ch)`, `rig_channel_msleft(box, ch, nowMs)`. The box mirrors `switchOn`/`estopped` itself (set as it issues commands) since the core exposes only `state()`/`canFire()`.
 
 The rig dispatches a sequence cue exactly as the firmware will: a due step calls the same `canFire` gate before energizing a channel pulse, so a disarmed/E-STOPped box visibly skips cues mid-show.
 
@@ -108,7 +97,7 @@ Stored in `localStorage`, with file **export/import** (JSON download/upload). Gr
 
 ## 7. Data flow
 
-UI event → `SimConnection.method()` → WASM C-ABI call (real `fireworkcore` logic) → the sim-clock loop calls `rig_tick(now)` then `rig_snapshot_json()` → parsed into the snapshot store → Svelte re-renders boxes/LEDs/channels. Authoring writes `config.ts` state → `localStorage`; "Run" expands the chosen sequence's groups to steps and calls `rig_load_sequence` + `rig_start_sequence`.
+UI event → `SimConnection.method()` → WASM C-ABI call (real `fireworkcore` logic) → the sim-clock loop calls `rig_tick(now)` then reads the discrete state getters → assembles a snapshot object into the store → Svelte re-renders boxes/LEDs/channels. Authoring writes `config.ts` state → `localStorage`; "Run" expands the chosen sequence's groups to steps and calls `rig_load_sequence` + `rig_start_sequence`.
 
 ## 8. Testing
 
