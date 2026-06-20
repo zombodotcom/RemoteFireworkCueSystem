@@ -96,7 +96,7 @@ ARMED ── valid FIRE ──► FIRING (one channel, bounded pulse) ──► 
 
 ### Gates to enter/stay ARMED (all required)
 1. **Physical arm switch ON** — read every loop, hardware-authoritative.
-2. **Controller ARM command** — deliberate, carries a fresh **nonce** (replay-proof).
+2. **Controller ARM command** — deliberate, carries a fresh **nonce**. Replay protection is **reset-per-session**: a nonce replayed while still armed is rejected, but nonce tracking clears on any return to SAFE (disarm/E-STOP/switch-off), so each arming session is independent and a controller reboot can never lock you out of arming. The physical switch is always the real gate.
 3. **Heartbeat alive while idle** — valid controller heartbeat within timeout. During a committed sequence the box honors the controller's scheduled cues; a brief link blip does not drop it.
 4. **Not E-STOPped** — E-STOP latches SAFE until deliberate re-arm.
 
