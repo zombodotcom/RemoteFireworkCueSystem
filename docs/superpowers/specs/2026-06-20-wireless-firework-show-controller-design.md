@@ -102,7 +102,7 @@ ARMED ── valid FIRE ──► FIRING (one channel, bounded pulse) ──► 
 4. **Not E-STOPped** — E-STOP latches SAFE until deliberate re-arm.
 
 ### Gates to FIRE a channel (on top of ARMED)
-5. Valid `FIRE` packet: correct **CRC**, in-range channel, **unseen message ID** (no double-fire on resend).
+5. Valid `FIRE` packet: correct **CRC**, in-range channel, **unseen message ID** (no double-fire on resend). The id is recorded as "seen" **only when the channel actually fires** (after the `canFire` gate passes), not on arrival — so a cue rejected during a brief disarm window can still fire on the controller's retransmit once armed, while a retransmit of an *already-fired* cue is still rejected. (User decision 2026-06-20: favor show reliability / no silent duds; double-fire remains impossible.)
 6. Pulse is **time-bounded in firmware** (`FIRE_MS`) — a channel physically cannot stay on longer than the cap, regardless of the command. Hard ceiling against stuck-on outputs.
 
 ### Link-loss policy (per user decision)
