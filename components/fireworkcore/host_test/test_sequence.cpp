@@ -52,6 +52,22 @@ void test_running_false_after_all_fired() {
     s.due(2000, out, 8);             // all become due and fire
     CHECK(!s.running());
 }
+void test_partial_delivery_when_outcap_small() {
+    SeqStep three[] = { {0,0,1}, {0,0,2}, {0,0,3} };  // all due at elapsed 0
+    SequenceScheduler s;
+    s.load(three, 3);
+    s.start(0);
+    SeqStep out[1];
+    CHECK_EQ(s.due(0, out, 1), 1);   // only room for one this call
+    CHECK_EQ(out[0].channel, 1);
+    CHECK(s.running());              // two steps still deferred
+    CHECK_EQ(s.due(0, out, 1), 1);
+    CHECK_EQ(out[0].channel, 2);
+    CHECK(s.running());
+    CHECK_EQ(s.due(0, out, 1), 1);
+    CHECK_EQ(out[0].channel, 3);
+    CHECK(!s.running());             // all delivered -> done
+}
 
 int main() {
     RUN(test_not_running_before_start);
@@ -59,5 +75,6 @@ int main() {
     RUN(test_steps_fire_once);
     RUN(test_stop_halts);
     RUN(test_running_false_after_all_fired);
+    RUN(test_partial_delivery_when_outcap_small);
     return REPORT();
 }
