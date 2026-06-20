@@ -1,12 +1,13 @@
 <script lang="ts">
   import type { BoxView } from "../stores";
   export let box: BoxView;
+  export let labels: string[] = [];
   export let onFire: (ch: number) => void;
 </script>
 
 <div class="grid">
   {#each box.channels as ch, i}
-    <button class="cell" class:firing={ch.firing} on:click={() => onFire(i)} title={`ch ${i}`}>
+    <button class="cell" class:firing={ch.firing} on:click={() => onFire(i)} title={labels[i] ?? `ch ${i}`}>
       {i}
     </button>
   {/each}

@@ -2,6 +2,7 @@
   import type { BoxView } from "../stores";
   import ChannelGrid from "./ChannelGrid.svelte";
   export let box: BoxView;
+  export let labels: string[] = [];
   export let onSwitch: (on: boolean) => void;
   export let onFire: (ch: number) => void;
 </script>
@@ -14,7 +15,7 @@
     </span>
     <label><input type="checkbox" checked={box.switchOn} on:change={(e) => onSwitch(/** @type {HTMLInputElement} */ (e.target).checked)} /> arm switch</label>
   </header>
-  <ChannelGrid {box} {onFire} />
+  <ChannelGrid {box} {labels} {onFire} />
 </div>
 
 <style>

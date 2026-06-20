@@ -1,11 +1,17 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
-  import { snapshot } from "../stores";
+  import { snapshot, config } from "../stores";
   import { SimConnection } from "../core/connection";
   import BoxPanel from "./BoxPanel.svelte";
   import TransportControls from "./TransportControls.svelte";
 
   let conn: SimConnection | null = null;
+
+  function labelsFor(boxId: number): string[] {
+    const arr = new Array(16).fill("");
+    for (const ch of $config.channels) if (ch.boxId === boxId) arr[ch.channel] = ch.label;
+    return arr;
+  }
 
   onMount(async () => {
     conn = await SimConnection.create();
@@ -54,6 +60,7 @@
     {#each $snapshot.boxes as box (box.id)}
       <BoxPanel
         {box}
+        labels={labelsFor(box.id)}
         onSwitch={(on) => conn?.setSwitch(box.id, on)}
         onFire={(ch) => conn?.fire(box.id, ch)}
       />
