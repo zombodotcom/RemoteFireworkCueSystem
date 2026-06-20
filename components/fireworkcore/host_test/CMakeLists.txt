@@ -13,6 +13,7 @@ set(CORE_SRC
     ${CORE}/src/arming.cpp
     ${CORE}/src/sequence.cpp
     ${CORE}/src/box_controller.cpp
+    ${CORE}/src/box_link.cpp
 )
 
 add_executable(test_crc32 test_crc32.cpp ${CORE_SRC})
@@ -36,3 +37,6 @@ add_test(NAME test_rig COMMAND test_rig)
 
 add_executable(test_box_controller test_box_controller.cpp ${CORE_SRC})
 add_test(NAME test_box_controller COMMAND test_box_controller)
+
+add_executable(test_box_link test_box_link.cpp ${CORE_SRC})
+add_test(NAME test_box_link COMMAND test_box_link)
