@@ -2,6 +2,10 @@
 #include <cstdio>
 #include <cstdint>
 
+// NOTE: file-static counter. Each test executable links exactly one TU that
+// includes this header (the test's .cpp), so the single counter is correct.
+// If a test binary ever links two TUs that both include check.h, move this to
+// a check.cpp (or an inline accessor) so failures are not under-counted.
 static int g_failures = 0;
 
 #define CHECK(cond) \

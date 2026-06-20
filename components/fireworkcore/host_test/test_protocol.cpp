@@ -19,8 +19,27 @@ void test_command_crc_detects_tamper() {
     CHECK(!fw::crcValid(p));
 }
 
+void test_channel_in_range() {
+    CHECK(fw::channelInRange(0));
+    CHECK(fw::channelInRange(15));
+    CHECK(!fw::channelInRange(16));
+    CHECK(!fw::channelInRange(200));
+}
+void test_ack_crc_roundtrip_and_tamper() {
+    fw::AckPacket a{};
+    a.type = (uint8_t)fw::MsgType::ACK;
+    a.responseToId = 99; a.deviceStatus = 1; a.timestamp = 1234;
+    std::strncpy(a.note, "IGNITED OK", sizeof(a.note));
+    a.crc = fw::computeCrc(a);
+    CHECK(fw::crcValid(a));
+    a.deviceStatus = 2;            // tamper after CRC
+    CHECK(!fw::crcValid(a));
+}
+
 int main() {
     RUN(test_command_crc_roundtrip);
     RUN(test_command_crc_detects_tamper);
+    RUN(test_channel_in_range);
+    RUN(test_ack_crc_roundtrip_and_tamper);
     return REPORT();
 }

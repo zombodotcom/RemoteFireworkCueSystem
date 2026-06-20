@@ -38,4 +38,8 @@ inline uint32_t computeCrc(const AckPacket& p) {
 inline bool crcValid(const CommandPacket& p) { return p.crc == computeCrc(p); }
 inline bool crcValid(const AckPacket& p)     { return p.crc == computeCrc(p); }
 
+// Channel-range gate (spec §5 FIRE gate #5). Firmware composes this with CRC
+// validity + dedup (RecentIds) before firing a channel.
+inline bool channelInRange(uint8_t channel) { return channel < MAX_CHANNELS; }
+
 } // namespace fw
