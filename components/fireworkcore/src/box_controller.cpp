@@ -33,21 +33,21 @@ void BoxController::setPhysicalSwitch(bool on, uint32_t nowMs) {
     }
 }
 
-void BoxController::onCommand(const CommandPacket& pkt, uint32_t nowMs) {
-    if (!crcValid(pkt)) return;                     // corrupt packet ignored
+CommandResult BoxController::onCommand(const CommandPacket& pkt, uint32_t nowMs) {
+    if (!crcValid(pkt)) return CommandResult::IGNORED;   // corrupt packet ignored
     switch ((MsgType)pkt.type) {
-        case MsgType::ARM:       arm_.arm(pkt.nonce, nowMs); break;
-        case MsgType::DISARM:    arm_.disarm(nowMs); break;
-        case MsgType::HEARTBEAT: arm_.heartbeat(nowMs); break;
-        case MsgType::ESTOP:     arm_.estop(nowMs); deenergizeAll(); break;
+        case MsgType::ARM:       arm_.arm(pkt.nonce, nowMs); return CommandResult::IGNORED;
+        case MsgType::DISARM:    arm_.disarm(nowMs); return CommandResult::IGNORED;
+        case MsgType::HEARTBEAT: arm_.heartbeat(nowMs); return CommandResult::IGNORED;
+        case MsgType::ESTOP:     arm_.estop(nowMs); deenergizeAll(); return CommandResult::IGNORED;
         case MsgType::FIRE:
-            if (pkt.boxId != cfg_.boxId) break;       // not addressed to this box
-            if (!channelInRange(pkt.targetChannel)) break;
-            if (!arm_.canFire(nowMs)) break;          // rejected: do NOT record id (retry may fire later)
-            if (seen_.seenOrRecord(pkt.id)) break;    // duplicate of an already-fired id -> no double-fire
+            if (pkt.boxId != cfg_.boxId) return CommandResult::IGNORED;      // not ours
+            if (!channelInRange(pkt.targetChannel)) return CommandResult::REJECTED;
+            if (!arm_.canFire(nowMs)) return CommandResult::REJECTED;        // not armed etc: do NOT record id
+            if (seen_.seenOrRecord(pkt.id)) return CommandResult::DUPLICATE; // already fired this id
             energize(pkt.targetChannel, nowMs);
-            break;
-        default: break;                             // ACK or unknown — ignore on the box
+            return CommandResult::FIRED;
+        default: return CommandResult::IGNORED;    // ACK or unknown — ignore on the box
     }
 }
 

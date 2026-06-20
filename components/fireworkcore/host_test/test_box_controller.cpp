@@ -150,6 +150,31 @@ void test_disarm_command_kills_live_output() {
     CHECK_EQ(drv.countOn(), 0);                     // invariant: disarmed -> no live output
 }
 
+void test_result_fired() {
+    FakeChannelDriver drv; BoxController b = armedBox(drv, 0);
+    CHECK_EQ((int)b.onCommand(cmd(MsgType::FIRE, 80, 0, 1, 0), 0), (int)CommandResult::FIRED);
+}
+void test_result_duplicate() {
+    FakeChannelDriver drv; BoxController b = armedBox(drv, 0);
+    b.onCommand(cmd(MsgType::FIRE, 81, 0, 2, 0), 0);          // first fire
+    CHECK_EQ((int)b.onCommand(cmd(MsgType::FIRE, 81, 0, 2, 0), 0), (int)CommandResult::DUPLICATE); // same id
+}
+void test_result_rejected_when_disarmed() {
+    FakeChannelDriver drv; BoxController b(drv, BoxConfig{}); b.begin();
+    CHECK_EQ((int)b.onCommand(cmd(MsgType::FIRE, 82, 0, 3, 0), 0), (int)CommandResult::REJECTED);
+}
+void test_result_ignored_wrong_box() {
+    FakeChannelDriver drv; BoxController b = armedBox(drv, 0);
+    CHECK_EQ((int)b.onCommand(cmd(MsgType::FIRE, 83, 1, 4, 0), 0), (int)CommandResult::IGNORED);
+}
+void test_result_duplicate_still_no_double_fire() {
+    FakeChannelDriver drv; BoxController b = armedBox(drv, 0);
+    b.onCommand(cmd(MsgType::FIRE, 84, 0, 5, 0), 0); b.tick(401); // fired + expired
+    CHECK_EQ(drv.countOn(), 0);
+    b.onCommand(cmd(MsgType::FIRE, 84, 0, 5, 0), 500);            // duplicate
+    CHECK_EQ(drv.countOn(), 0);                                   // must NOT re-fire
+}
+
 int main() {
     RUN(test_begin_is_safe_and_alloff);
     RUN(test_fire_when_armed_energizes_then_expires);
@@ -165,5 +190,10 @@ int main() {
     RUN(test_heartbeat_keeps_armed);
     RUN(test_disarm_command_kills_live_output);
     RUN(test_rejected_fire_id_can_retry_after_arm);
+    RUN(test_result_fired);
+    RUN(test_result_duplicate);
+    RUN(test_result_rejected_when_disarmed);
+    RUN(test_result_ignored_wrong_box);
+    RUN(test_result_duplicate_still_no_double_fire);
     return REPORT();
 }

@@ -504,10 +504,13 @@ extern "C" void app_main(void) {
     link.setOnCommand([](const fw::CommandPacket& pkt) {
         uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
         lastRxMs = now;
-        box.onCommand(pkt, now);
-        if ((fw::MsgType)pkt.type == fw::MsgType::FIRE && pkt.boxId == cfg.boxId) {
+        fw::CommandResult r = box.onCommand(pkt, now);
+        // ACK both FIRED and DUPLICATE so a lost ACK self-heals on the controller's
+        // same-id retry; do NOT ACK a REJECTED cue (genuinely not fired).
+        if (r == fw::CommandResult::FIRED || r == fw::CommandResult::DUPLICATE) {
             fw::AckPacket ack{}; ack.type = (uint8_t)fw::MsgType::ACK;
-            ack.responseToId = pkt.id; ack.deviceStatus = (uint8_t)box.state();
+            ack.responseToId = pkt.id;
+            ack.deviceStatus = (r == fw::CommandResult::FIRED) ? 1 : 2; // 1=IGNITED_OK, 2=ALREADY_FIRED
             ack.timestamp = now; ack.crc = fw::computeCrc(ack);
             link.sendAck(ack);
         }
