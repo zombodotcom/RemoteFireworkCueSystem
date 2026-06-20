@@ -20,19 +20,19 @@
 
 {#if conn}
   <TransportControls
-    onArm={() => conn!.arm()}
-    onDisarm={() => conn!.disarm()}
-    onEstop={() => conn!.estop()}
-    onClearEstop={() => conn!.clearEstop()}
+    onArm={() => conn?.arm()}
+    onDisarm={() => conn?.disarm()}
+    onEstop={() => conn?.estop()}
+    onClearEstop={() => conn?.clearEstop()}
     onRunDemo={runDemo}
-    onToggleConnected={(on) => conn!.setConnected(on)}
+    onToggleConnected={(on) => conn?.setConnected(on)}
   />
   <div class="boxes">
     {#each $snapshot.boxes as box (box.id)}
       <BoxPanel
         {box}
-        onSwitch={(on) => conn!.setSwitch(box.id, on)}
-        onFire={(ch) => conn!.fire(box.id, ch)}
+        onSwitch={(on) => conn?.setSwitch(box.id, on)}
+        onFire={(ch) => conn?.fire(box.id, ch)}
       />
     {/each}
   </div>

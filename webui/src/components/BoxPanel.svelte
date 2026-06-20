@@ -12,7 +12,7 @@
     <span class="lamp" class:armed={box.armed} class:estop={box.estopped}>
       {box.estopped ? "E-STOP" : box.armed ? "ARMED" : "SAFE"}
     </span>
-    <label><input type="checkbox" checked={box.switchOn} on:change={(e) => onSwitch((e.target as HTMLInputElement).checked)} /> arm switch</label>
+    <label><input type="checkbox" checked={box.switchOn} on:change={(e) => onSwitch(/** @type {HTMLInputElement} */ (e.target).checked)} /> arm switch</label>
   </header>
   <ChannelGrid {box} {onFire} />
 </div>
