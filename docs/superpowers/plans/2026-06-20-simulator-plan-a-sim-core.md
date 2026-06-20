@@ -62,22 +62,24 @@ cd /c/emsdk
 ```
 Expected: downloads the toolchain (~1 GB) and prints "set up the following tools... emcc".
 
-- [ ] **Step 2: Verify emcc works**
+- [ ] **Step 2: Verify emcc works (Git Bash PATH, not emsdk_env.sh)**
 
-In a shell where emsdk is activated (run `/c/emsdk/emsdk_env.bat` on Windows cmd, or `source /c/emsdk/emsdk_env.sh` in bash):
+In Git Bash, sourcing `emsdk_env.sh` does NOT put `emcc` on PATH; add the emscripten dir directly:
 ```bash
+export PATH="/c/emsdk/upstream/emscripten:$PATH"
 emcc --version
 ```
-Expected: prints `emcc (Emscripten gcc/clang-like replacement ...) 3.1.74`.
+Expected: prints `emcc (Emscripten ...) 6.0.0` (latest at install time).
 
 - [ ] **Step 3: Compile a hello-world to confirm the pipeline**
 
 ```bash
+export PATH="/c/emsdk/upstream/emscripten:$PATH"
 printf '#include <cstdio>\nint main(){std::puts("ok");}' > /tmp/h.cpp
-emcc /tmp/h.cpp -o /tmp/h.js -sSINGLE_FILE=1 -sMODULARIZE=1 -sEXPORT_ES6=1
-node -e "import('/tmp/h.js').then(m=>m.default())"
+emcc /tmp/h.cpp -o ./_probe.mjs -sSINGLE_FILE=1 -sMODULARIZE=1 -sEXPORT_ES6=1
+node --input-type=module -e "import M from './_probe.mjs'; await M();" && rm ./_probe.mjs
 ```
-Expected: prints `ok`.
+Expected: prints `ok`. (Note: Node ESM on Windows needs a relative or drive-letter `file:///C:/...` specifier — a bare `/tmp/...` path errors with `ERR_INVALID_FILE_URL_PATH`.)
 
 - [ ] **Step 4: Record the version and activation steps**
 
@@ -85,13 +87,14 @@ Create `webui/EMSDK.md`:
 ```markdown
 # Emscripten for the simulator
 
-Pinned version: **3.1.74**, installed at `C:\emsdk`.
+Installed version: **6.0.0** (latest at install), at `C:\emsdk`.
 
-Activate before running `webui/scripts/build-wasm.sh`:
-- Git Bash:  `source /c/emsdk/emsdk_env.sh`
-- Windows cmd: `C:\emsdk\emsdk_env.bat`
+Activation in Git Bash (sourcing `emsdk_env.sh` does NOT work here):
+    export PATH="/c/emsdk/upstream/emscripten:$PATH"
 
-Then: `bash webui/scripts/build-wasm.sh`
+The build script `webui/scripts/build-wasm.sh` self-activates this on PATH, so
+normally you just run: `bash webui/scripts/build-wasm.sh` (override `EMSDK_DIR`
+if emsdk is elsewhere).
 ```
 
 - [ ] **Step 5: Commit**
@@ -523,8 +526,13 @@ git commit -m "test(sim): cover rig sequence dispatch, seq-armed override, estop
 ```bash
 #!/usr/bin/env bash
 # Build the fireworkcore rig to a single-file ES module.
-# Requires an activated emsdk (see webui/EMSDK.md): source /c/emsdk/emsdk_env.sh
+# Self-activates emsdk on PATH (Git Bash: sourcing emsdk_env.sh does NOT work;
+# emcc.exe lives in upstream/emscripten). Override EMSDK_DIR if installed elsewhere.
 set -euo pipefail
+
+EMSDK_DIR="${EMSDK_DIR:-/c/emsdk}"
+export PATH="$EMSDK_DIR/upstream/emscripten:$PATH"
+command -v emcc >/dev/null || { echo "emcc not found; check EMSDK_DIR ($EMSDK_DIR)"; exit 1; }
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 CORE="$ROOT/components/fireworkcore"
@@ -555,11 +563,10 @@ dist/
 src/core/fireworkcore.js
 ```
 
-- [ ] **Step 3: Build the module (emsdk must be activated)**
+- [ ] **Step 3: Build the module**
 
-Run:
+Run (the script self-activates emsdk on PATH):
 ```bash
-source /c/emsdk/emsdk_env.sh
 bash webui/scripts/build-wasm.sh
 ```
 Expected: prints `built .../webui/src/core/fireworkcore.js` and the file exists.
@@ -881,9 +888,8 @@ describe("wasm rig", () => {
 
 - [ ] **Step 6: Build the WASM, then run Vitest**
 
-Run (emsdk activated):
+Run (build-wasm.sh self-activates emsdk on PATH):
 ```bash
-source /c/emsdk/emsdk_env.sh
 bash webui/scripts/build-wasm.sh
 cd webui && npm run test
 ```
