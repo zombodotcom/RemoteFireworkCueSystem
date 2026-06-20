@@ -21,7 +21,7 @@ export function defaultConfig(): ShowConfig {
       channels.push({ id: `c${idx}`, label: `Box ${boxId} · Ch ${channel}`, boxId, channel });
     }
   }
-  return { version: 1, channels, groups: [], sequences: [] };
+  return { version: SCHEMA_VERSION, channels, groups: [], sequences: [] };
 }
 
 export function validateConfig(cfg: ShowConfig): string[] {
@@ -78,12 +78,24 @@ export function expandSequence(cfg: ShowConfig, seqId: string): number[] {
   return out;
 }
 
+export const SCHEMA_VERSION = 1;
+
 export function exportConfig(cfg: ShowConfig): string {
   return JSON.stringify(cfg, null, 2);
 }
 
 export function importConfig(json: string): ShowConfig {
-  const cfg = JSON.parse(json) as ShowConfig;
+  let parsed: unknown;
+  try { parsed = JSON.parse(json); }
+  catch { throw new Error("Invalid config: not valid JSON"); }
+  const cfg = parsed as ShowConfig;
+  if (!cfg || typeof cfg !== "object"
+      || !Array.isArray(cfg.channels) || !Array.isArray(cfg.groups) || !Array.isArray(cfg.sequences)) {
+    throw new Error("Invalid config: missing channels/groups/sequences arrays");
+  }
+  if (cfg.version !== SCHEMA_VERSION) {
+    throw new Error(`Invalid config: unsupported version ${cfg.version} (expected ${SCHEMA_VERSION})`);
+  }
   const errors = validateConfig(cfg);
   if (errors.length) throw new Error("Invalid config: " + errors.join("; "));
   return cfg;

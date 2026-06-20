@@ -7,12 +7,23 @@
 
   let tab: "channels" | "groups" | "sequences" = "channels";
   let importErr = "";
+  let runWarning = "";
 
   function runTriples(triples: number[]) {
     const c = $connection;
     if (!c) return;
+    // NOTE: setSwitch(true) here is a SIMULATOR-ONLY convenience so one click plays a show.
+    // The real hardware transport MUST NOT assert the physical arm switch — that is the
+    // operator's authority. Do not carry these setSwitch calls into a live LiveConnection.
     c.setSwitch(0, true); c.setSwitch(1, true); c.arm();
-    c.loadSequence(triples); c.startSequence();
+    const submitted = Math.floor(triples.length / 3);
+    const loaded = c.loadSequence(triples);
+    if (loaded < submitted) {
+      runWarning = `Show truncated: only ${loaded} of ${submitted} cues fit the device limit.`;
+    } else {
+      runWarning = "";
+    }
+    c.startSequence();
   }
   function stop() { $connection?.stopSequence(); }
 
@@ -41,6 +52,7 @@
   <label class="import">Import JSON <input type="file" accept="application/json" on:change={doImport} /></label>
 </div>
 {#if importErr}<p class="err">{importErr}</p>{/if}
+{#if runWarning}<p class="err">{runWarning}</p>{/if}
 
 {#if tab === "channels"}<ChannelEditor />{/if}
 {#if tab === "groups"}<GroupEditor />{/if}

@@ -103,4 +103,16 @@ describe("config", () => {
     c.sequences.push({ id: "dup", label: "B", steps: [] });
     expect(validateConfig(c).join(" ")).toContain("Duplicate sequence id");
   });
+
+  it("import rejects a config missing arrays", () => {
+    expect(() => importConfig('{"version":1}')).toThrow(/channels\/groups\/sequences/);
+  });
+  it("import rejects an unsupported version", () => {
+    const c = defaultConfig(); (c as any).version = 2;
+    expect(() => importConfig(JSON.stringify(c))).toThrow(/unsupported version/);
+  });
+  it("import accepts a valid current-version config", () => {
+    const c = defaultConfig(); c.channels[0].label = "X";
+    expect(importConfig(JSON.stringify(c)).channels[0].label).toBe("X");
+  });
 });

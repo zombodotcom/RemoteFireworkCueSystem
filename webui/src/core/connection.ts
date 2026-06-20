@@ -9,7 +9,7 @@ export interface SystemConnection {
   estop(): void;
   clearEstop(): void;
   fire(box: number, ch: number): void;
-  loadSequence(triples: number[]): void;
+  loadSequence(triples: number[]): number;
   startSequence(): void;
   stopSequence(): void;
   start(): void;        // begin the sim-clock loop
@@ -42,7 +42,7 @@ export class SimConnection implements SystemConnection {
   estop() { this.rig.estop(this.now); this.publish(); }
   clearEstop() { this.rig.clearEstop(this.now); this.publish(); }
   fire(box: number, ch: number) { this.rig.fire(box, ch, this.now); this.publish(); }
-  loadSequence(triples: number[]) { this.rig.loadSequence(triples); }
+  loadSequence(triples: number[]) { return this.rig.loadSequence(triples); }
   startSequence() { this.rig.startSequence(this.now); this.publish(); }
   stopSequence() { this.rig.stopSequence(this.now); this.publish(); }
   setConnected(on: boolean) { this.connected = on; }
