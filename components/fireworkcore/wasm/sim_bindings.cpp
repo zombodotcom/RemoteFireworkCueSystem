@@ -31,6 +31,12 @@ Rig g;
 
 bool validBox(int b) { return b == 0 || b == 1; }
 
+void syncSequenceFlag() {
+    bool running = g.scheduler.running();
+    g.seqRunning = running;
+    for (int i = 0; i < 2; i++) g.boxes[i].arm.setSequenceRunning(running);
+}
+
 void energize(Box& b, int channel, uint32_t now) {
     b.ch[channel].firing = true;
     b.ch[channel].offAtMs = now + FIRE_MS;
@@ -73,12 +79,16 @@ void rig_clear_estop(uint32_t nowMs) {
 }
 
 int rig_fire(int boxId, int channel, uint32_t nowMs) {
+    syncSequenceFlag();
     if (!validBox(boxId)) return 0;
     if (!channelInRange((uint8_t)channel)) return 0;
     Box& b = g.boxes[boxId];
     if (!b.arm.canFire(nowMs)) return 0;
     uint32_t id = g.nextMsgId++;
-    if (b.seen.seenOrRecord(id)) return 0;   // mirrors firmware dedup
+    // Structural mirror of the firmware's retransmit dedup. The sim issues a unique
+    // id per fire, so this never rejects here; it exists so the rig exercises the
+    // same RecentIds API the firmware uses.
+    if (b.seen.seenOrRecord(id)) return 0;
     energize(b, channel, nowMs);
     return 1;
 }
@@ -126,7 +136,7 @@ int  rig_seq_running(void) { return g.seqRunning ? 1 : 0; }
 int rig_box_state(int boxId)    { return validBox(boxId) ? (int)g.boxes[boxId].arm.state() : 0; }
 int rig_box_switch(int boxId)   { return validBox(boxId) && g.boxes[boxId].switchOn ? 1 : 0; }
 int rig_box_estopped(int boxId) { return validBox(boxId) && g.boxes[boxId].estopped ? 1 : 0; }
-int rig_box_can_fire(int boxId, uint32_t nowMs) { return validBox(boxId) && g.boxes[boxId].arm.canFire(nowMs) ? 1 : 0; }
+int rig_box_can_fire(int boxId, uint32_t nowMs) { syncSequenceFlag(); return validBox(boxId) && g.boxes[boxId].arm.canFire(nowMs) ? 1 : 0; }
 int rig_channel_firing(int boxId, int channel) {
     if (!validBox(boxId) || !channelInRange((uint8_t)channel)) return 0;
     return g.boxes[boxId].ch[channel].firing ? 1 : 0;

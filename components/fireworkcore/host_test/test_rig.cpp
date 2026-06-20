@@ -96,6 +96,22 @@ void test_estop_mid_show_skips_remaining_cues() {
     CHECK_EQ(rig_seq_running(), 0);
 }
 
+void test_manual_fire_blocked_after_sequence_done_with_stale_heartbeat() {
+    rig_reset();
+    rig_set_switch(0, 1, 0);
+    rig_heartbeat(0);
+    rig_arm(1, 0);
+    uint32_t steps[] = { 0,0,1 };          // single cue at t=0
+    rig_load_sequence(steps, 1);
+    rig_start_sequence(0);
+    rig_tick(0);                            // dispatches the only cue; scheduler now done
+    // No tick since; heartbeat last at 0. At t=5000 the heartbeat is stale (>2000ms).
+    // Before the fix, sequenceRunning_ was still true -> canFire true -> fire allowed (BUG).
+    CHECK_EQ(rig_box_can_fire(0, 5000), 0);
+    CHECK_EQ(rig_fire(0, 2, 5000), 0);      // must be rejected
+    CHECK_EQ(rig_channel_firing(0, 2), 0);
+}
+
 int main() {
     RUN(test_boots_safe);
     RUN(test_arm_requires_switch);
@@ -106,5 +122,6 @@ int main() {
     RUN(test_sequence_fires_cues_in_order);
     RUN(test_sequence_running_keeps_armed_without_heartbeat);
     RUN(test_estop_mid_show_skips_remaining_cues);
+    RUN(test_manual_fire_blocked_after_sequence_done_with_stale_heartbeat);
     return REPORT();
 }
