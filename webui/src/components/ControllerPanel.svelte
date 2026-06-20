@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
-  import { snapshot, config } from "../stores";
+  import { snapshot, config, connection } from "../stores";
   import { SimConnection } from "../core/connection";
   import BoxPanel from "./BoxPanel.svelte";
   import TransportControls from "./TransportControls.svelte";
@@ -16,8 +16,9 @@
   onMount(async () => {
     conn = await SimConnection.create();
     conn.start();
+    connection.set(conn);
   });
-  onDestroy(() => conn?.stop());
+  onDestroy(() => { conn?.stop(); connection.set(null); });
 
   // Build a choreographed demo: an alternating left-to-right sweep across both
   // boxes' first 8 channels, then a simultaneous finale burst. Flat

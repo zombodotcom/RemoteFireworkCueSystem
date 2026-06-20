@@ -14,7 +14,7 @@
       {#each byBox(b) as ch (ch.id)}
         <label class="row">
           <span class="num">Ch {ch.channel}</span>
-          <input value={ch.label} on:input={(e) => setLabel(ch.id, (e.target as HTMLInputElement).value)} />
+          <input value={ch.label} on:input={(e) => setLabel(ch.id, (/** @type {HTMLInputElement} */ (e.target)).value)} />
         </label>
       {/each}
     </div>
