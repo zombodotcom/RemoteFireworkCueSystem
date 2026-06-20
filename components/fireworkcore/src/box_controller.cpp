@@ -3,7 +3,7 @@
 namespace fw {
 
 BoxController::BoxController(ChannelDriver& driver, BoxConfig cfg)
-    : drv_(driver), cfg_(cfg), arm_(cfg.arming), prevState_(BoxState::SAFE) {
+    : drv_(driver), cfg_(cfg), arm_(cfg.arming) {
     for (int i = 0; i < MAX_CHANNELS; i++) { firing_[i] = false; offAtMs_[i] = 0; }
 }
 
@@ -14,7 +14,6 @@ void BoxController::deenergizeAll() {
 
 void BoxController::begin() {
     deenergizeAll();          // outputs off before anything else (boot-safe)
-    prevState_ = arm_.state(); // SAFE (never boot armed)
 }
 
 void BoxController::energize(uint8_t ch, uint32_t nowMs) {
@@ -52,13 +51,12 @@ void BoxController::onCommand(const CommandPacket& pkt, uint32_t nowMs) {
 }
 
 void BoxController::tick(uint32_t nowMs) {
-    // Capture state before update to detect transitions caused by command/switch changes.
-    BoxState stateBeforeUpdate = arm_.state();
     arm_.update(nowMs);
-    // Any transition out of ARMED forces outputs off (firmware force-off contract).
-    if (stateBeforeUpdate == BoxState::ARMED && arm_.state() != BoxState::ARMED) deenergizeAll();
-    prevState_ = arm_.state();
-    // Expire bounded fire pulses.
+    // Invariant: if not ARMED, no channel may be energized. Idempotent — covers
+    // every path to SAFE (disarm command, heartbeat-loss, switch-off, E-STOP)
+    // without relying on edge-detection timing (see arming.h FIRMWARE CONTRACT).
+    if (arm_.state() != BoxState::ARMED) deenergizeAll();
+    // Expire bounded fire pulses (when still ARMED).
     for (int i = 0; i < MAX_CHANNELS; i++) {
         if (firing_[i] && nowMs >= offAtMs_[i]) { drv_.setChannel((uint8_t)i, false); firing_[i] = false; }
     }

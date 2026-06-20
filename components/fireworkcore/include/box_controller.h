@@ -33,7 +33,6 @@ private:
     RecentIds<32> seen_;
     bool     firing_[MAX_CHANNELS];
     uint32_t offAtMs_[MAX_CHANNELS];
-    BoxState prevState_;
 };
 
 } // namespace fw

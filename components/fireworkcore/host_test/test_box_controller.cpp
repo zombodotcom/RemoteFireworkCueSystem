@@ -126,6 +126,17 @@ void test_heartbeat_keeps_armed() {
     CHECK_EQ((int)b.state(), (int)BoxState::ARMED);
 }
 
+void test_disarm_command_kills_live_output() {
+    FakeChannelDriver drv;
+    BoxController b = armedBox(drv, 0);
+    b.onCommand(cmd(MsgType::FIRE, 60, 0, 4, 0), 0);
+    CHECK(drv.on[4]);                               // channel live mid-pulse
+    b.onCommand(cmd(MsgType::DISARM, 61, 0, 0, 0), 10); // disarm command
+    b.tick(11);                                     // well before the 400ms pulse would expire
+    CHECK_EQ((int)b.state(), (int)BoxState::SAFE);
+    CHECK_EQ(drv.countOn(), 0);                     // invariant: disarmed -> no live output
+}
+
 int main() {
     RUN(test_begin_is_safe_and_alloff);
     RUN(test_fire_when_armed_energizes_then_expires);
@@ -139,5 +150,6 @@ int main() {
     RUN(test_estop_kills_outputs_and_latches);
     RUN(test_heartbeat_loss_disarms_when_idle);
     RUN(test_heartbeat_keeps_armed);
+    RUN(test_disarm_command_kills_live_output);
     return REPORT();
 }
