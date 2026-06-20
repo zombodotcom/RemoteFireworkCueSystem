@@ -4,7 +4,7 @@
 
 namespace fw {
 
-static const size_t MAX_SEQ_STEPS = 64;
+static const size_t MAX_SEQ_STEPS = 256;
 
 struct SeqStep {
     uint32_t timeMs;

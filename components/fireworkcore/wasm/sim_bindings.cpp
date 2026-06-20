@@ -118,7 +118,7 @@ void rig_tick(uint32_t nowMs) {
 }
 
 // Sequence API — bodies completed in Task 3 (declared here so the unit links).
-void rig_load_sequence(const uint32_t* triples, int count) {
+int rig_load_sequence(const uint32_t* triples, int count) {
     SeqStep steps[MAX_SEQ_STEPS];
     if (count < 0) count = 0;
     if ((size_t)count > MAX_SEQ_STEPS) count = (int)MAX_SEQ_STEPS;
@@ -128,6 +128,7 @@ void rig_load_sequence(const uint32_t* triples, int count) {
         steps[i].channel = (uint8_t)triples[i * 3 + 2];
     }
     g.scheduler.load(steps, (size_t)count);
+    return count;
 }
 void rig_start_sequence(uint32_t nowMs) { g.scheduler.start(nowMs); g.seqRunning = g.scheduler.running(); }
 void rig_stop_sequence(uint32_t nowMs)  { (void)nowMs; g.scheduler.stop(); g.seqRunning = false; }

@@ -15,7 +15,7 @@ void rig_clear_estop(uint32_t nowMs);
 int  rig_fire(int boxId, int channel, uint32_t nowMs);   // 1 if the cue energized a channel
 
 // Sequence API (implemented in Task 3)
-void rig_load_sequence(const uint32_t* triples, int count); // [timeMs,boxId,channel] * count
+int rig_load_sequence(const uint32_t* triples, int count); // returns number of steps loaded
 void rig_start_sequence(uint32_t nowMs);
 void rig_stop_sequence(uint32_t nowMs);
 int  rig_seq_running(void);

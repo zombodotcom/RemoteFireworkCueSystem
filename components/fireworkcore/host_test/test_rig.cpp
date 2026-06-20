@@ -96,6 +96,15 @@ void test_estop_mid_show_skips_remaining_cues() {
     CHECK_EQ(rig_seq_running(), 0);
 }
 
+void test_load_sequence_returns_count_and_capacity() {
+    rig_reset();
+    // 70 cues all at t=0 on box 0, channels cycling 0..15
+    uint32_t steps[70 * 3];
+    for (int i = 0; i < 70; i++) { steps[i*3+0] = 0; steps[i*3+1] = 0; steps[i*3+2] = (uint32_t)(i % 16); }
+    int loaded = rig_load_sequence(steps, 70);   // MAX_SEQ_STEPS is 256, so all 70 load
+    CHECK_EQ(loaded, 70);
+}
+
 void test_manual_fire_blocked_after_sequence_done_with_stale_heartbeat() {
     rig_reset();
     rig_set_switch(0, 1, 0);
@@ -123,5 +132,6 @@ int main() {
     RUN(test_sequence_running_keeps_armed_without_heartbeat);
     RUN(test_estop_mid_show_skips_remaining_cues);
     RUN(test_manual_fire_blocked_after_sequence_done_with_stale_heartbeat);
+    RUN(test_load_sequence_returns_count_and_capacity);
     return REPORT();
 }

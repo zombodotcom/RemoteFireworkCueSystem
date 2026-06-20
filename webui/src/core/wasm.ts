@@ -10,7 +10,7 @@ export interface Rig {
   estop(now: number): void;
   clearEstop(now: number): void;
   fire(box: number, ch: number, now: number): number;
-  loadSequence(triples: number[]): void;
+  loadSequence(triples: number[]): number;
   startSequence(now: number): void;
   stopSequence(now: number): void;
   seqRunning(): boolean;
@@ -42,8 +42,9 @@ export async function loadRig(): Promise<Rig> {
       const count = Math.floor(triples.length / 3);
       const ptr = m._malloc(triples.length * 4);
       for (let i = 0; i < triples.length; i++) m.setValue(ptr + i * 4, triples[i], "i32");
-      call("rig_load_sequence", null, [N, N], [ptr, count]);
+      const loaded = call("rig_load_sequence", N, [N, N], [ptr, count]);
       m._free(ptr);
+      return loaded;
     },
     startSequence: (now) => call("rig_start_sequence", null, [N], [now]),
     stopSequence: (now) => call("rig_stop_sequence", null, [N], [now]),
