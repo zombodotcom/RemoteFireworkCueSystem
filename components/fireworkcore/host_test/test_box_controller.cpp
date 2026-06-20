@@ -3,6 +3,20 @@
 #include "fake_channel_driver.h"
 using namespace fw;
 
+static CommandPacket cmd(MsgType t, uint32_t id, uint8_t boxId, uint8_t ch, uint32_t nonce) {
+    CommandPacket p{};
+    p.type = (uint8_t)t; p.id = id; p.boxId = boxId; p.targetChannel = ch; p.nonce = nonce;
+    p.crc = computeCrc(p);
+    return p;
+}
+static BoxController armedBox(FakeChannelDriver& drv, uint32_t now) {
+    BoxController b(drv, BoxConfig{});
+    b.begin();
+    b.setPhysicalSwitch(true, now);
+    b.onCommand(cmd(MsgType::ARM, 1, 0, 0, 100), now);   // arm with nonce 100
+    return b;
+}
+
 void test_begin_is_safe_and_alloff() {
     FakeChannelDriver drv;
     BoxController box(drv, BoxConfig{});
@@ -12,7 +26,64 @@ void test_begin_is_safe_and_alloff() {
     CHECK_EQ(drv.countOn(), 0);
 }
 
+void test_fire_when_armed_energizes_then_expires() {
+    FakeChannelDriver drv;
+    BoxController b = armedBox(drv, 0);
+    CHECK_EQ((int)b.state(), (int)BoxState::ARMED);
+    b.onCommand(cmd(MsgType::FIRE, 10, 0, 3, 0), 0);
+    CHECK(drv.on[3]);                       // channel 3 energized
+    b.tick(401);                            // > FIRE_MS(400)
+    CHECK(!drv.on[3]);                      // auto de-energized
+    CHECK_EQ((int)b.state(), (int)BoxState::ARMED);  // still armed (heartbeat fresh at arm)
+}
+
+void test_fire_ignored_when_disarmed() {
+    FakeChannelDriver drv;
+    BoxController b(drv, BoxConfig{});
+    b.begin();
+    b.onCommand(cmd(MsgType::FIRE, 11, 0, 2, 0), 0);  // SAFE
+    CHECK(!drv.on[2]);
+}
+
+void test_fire_wrong_box_ignored() {
+    FakeChannelDriver drv;
+    BoxController b = armedBox(drv, 0);     // this box is boxId 0
+    b.onCommand(cmd(MsgType::FIRE, 12, 1, 4, 0), 0);  // addressed to box 1
+    CHECK(!drv.on[4]);
+}
+
+void test_fire_out_of_range_ignored() {
+    FakeChannelDriver drv;
+    BoxController b = armedBox(drv, 0);
+    b.onCommand(cmd(MsgType::FIRE, 13, 0, 16, 0), 0); // MAX_CHANNELS==16 -> 16 invalid
+    CHECK_EQ(drv.countOn(), 0);
+}
+
+void test_duplicate_fire_id_ignored() {
+    FakeChannelDriver drv;
+    BoxController b = armedBox(drv, 0);
+    b.onCommand(cmd(MsgType::FIRE, 20, 0, 5, 0), 0);
+    b.tick(401); CHECK(!drv.on[5]);         // first fire expired
+    b.onCommand(cmd(MsgType::FIRE, 20, 0, 5, 0), 500); // SAME id replayed
+    CHECK(!drv.on[5]);                      // duplicate rejected, not re-fired
+}
+
+void test_corrupt_crc_ignored() {
+    FakeChannelDriver drv;
+    BoxController b = armedBox(drv, 0);
+    CommandPacket p = cmd(MsgType::FIRE, 30, 0, 6, 0);
+    p.targetChannel = 7;                    // tamper after CRC
+    b.onCommand(p, 0);
+    CHECK_EQ(drv.countOn(), 0);             // bad CRC -> ignored
+}
+
 int main() {
     RUN(test_begin_is_safe_and_alloff);
+    RUN(test_fire_when_armed_energizes_then_expires);
+    RUN(test_fire_ignored_when_disarmed);
+    RUN(test_fire_wrong_box_ignored);
+    RUN(test_fire_out_of_range_ignored);
+    RUN(test_duplicate_fire_id_ignored);
+    RUN(test_corrupt_crc_ignored);
     return REPORT();
 }
