@@ -25,13 +25,18 @@ void test_arms_with_switch_on() {
     CHECK(m.arm(1, 0));
     CHECK_EQ((int)m.state(), (int)BoxState::ARMED);
 }
-void test_nonce_replay_rejected() {
+void test_nonce_replay_rejected_within_session() {
+    ArmingStateMachine m;
+    m.setPhysicalSwitch(true, 0);
+    CHECK(m.arm(7, 0));
+    CHECK(!m.arm(7, 0));   // same nonce replayed while still armed -> rejected
+}
+void test_nonce_reusable_after_disarm() {
     ArmingStateMachine m;
     m.setPhysicalSwitch(true, 0);
     CHECK(m.arm(7, 0));
     m.disarm(0);
-    CHECK(!m.arm(7, 0));             // same nonce reused
-    CHECK(m.arm(8, 0));              // new nonce ok
+    CHECK(m.arm(7, 0));    // per-session reset: nonce 7 accepted again in a NEW session
 }
 void test_switch_off_disarms() {
     ArmingStateMachine m = armed_at(0);
@@ -69,17 +74,34 @@ void test_canfire_requires_all_gates() {
     m.estop(120);
     CHECK(!m.canFire(130));
 }
+void test_canfire_false_on_stale_heartbeat_without_update() {
+    ArmingStateMachine m = armed_at(0);   // lastHeartbeat = 0, timeout 2000ms
+    CHECK(m.canFire(1999));               // still fresh
+    CHECK(!m.canFire(2001));              // stale heartbeat rejected even though update() was not called
+}
+void test_sequence_flag_cleared_on_disarm() {
+    ArmingStateMachine m = armed_at(0);
+    m.setSequenceRunning(true);
+    m.disarm(0);                          // goSafe() must clear sequenceRunning_
+    m.setPhysicalSwitch(true, 0);
+    CHECK(m.arm(9, 0));                   // new session
+    m.update(99999);                      // heartbeat long stale; if seq flag had persisted, machine would stay ARMED
+    CHECK_EQ((int)m.state(), (int)BoxState::SAFE);  // proves the flag was cleared
+}
 
 int main() {
     RUN(test_constructs_safe);
     RUN(test_cannot_arm_with_switch_off);
     RUN(test_arms_with_switch_on);
-    RUN(test_nonce_replay_rejected);
+    RUN(test_nonce_replay_rejected_within_session);
+    RUN(test_nonce_reusable_after_disarm);
     RUN(test_switch_off_disarms);
     RUN(test_estop_latches_until_cleared);
     RUN(test_heartbeat_timeout_disarms_when_idle);
     RUN(test_heartbeat_keeps_armed);
     RUN(test_sequence_running_ignores_heartbeat_timeout);
     RUN(test_canfire_requires_all_gates);
+    RUN(test_canfire_false_on_stale_heartbeat_without_update);
+    RUN(test_sequence_flag_cleared_on_disarm);
     return REPORT();
 }

@@ -7,7 +7,11 @@ ArmingStateMachine::ArmingStateMachine(ArmingConfig cfg)
       estopped_(false), sequenceRunning_(false), haveNonce_(false),
       lastNonce_(0), lastHeartbeatMs_(0) {}
 
-void ArmingStateMachine::goSafe() { state_ = BoxState::SAFE; }
+void ArmingStateMachine::goSafe() {
+    state_ = BoxState::SAFE;
+    haveNonce_ = false;        // each arm session is independent (reset-per-session)
+    sequenceRunning_ = false;  // a disarm/estop/switch-off ends any running sequence
+}
 
 void ArmingStateMachine::setPhysicalSwitch(bool on, uint32_t /*nowMs*/) {
     switchOn_ = on;
