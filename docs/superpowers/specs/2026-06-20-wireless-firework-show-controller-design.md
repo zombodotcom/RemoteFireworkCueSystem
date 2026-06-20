@@ -127,7 +127,8 @@ Extends the proven packet design:
 - `CommandPacket { type, cmd, msgID, targetChannel, crc }` — reused.
 - `AckPacket { type, responseToID, note, status, timestamp, crc }` — reused.
 - New message types: `ARM`, `DISARM`, `HEARTBEAT`, `ESTOP`, carrying a **nonce** so arm/disarm can't be replayed.
-- Controller addresses each box by MAC, **retries** un-ACKed cues, surfaces failures to the phone ("Box A didn't ACK channel 12").
+- Controller addresses each box by MAC, **retries** un-ACKed cues (same message id), surfaces failures to the phone ("Box A didn't ACK channel 12").
+- **ACK self-heal (user decision 2026-06-20):** the box ACKs a *duplicate* FIRE too (`deviceStatus` ALREADY_FIRED vs IGNITED_OK), so a lost first-ACK self-heals on the controller's same-id retry — a cue that actually fired is never falsely reported as a dud. A rejected (not-armed) cue is not ACKed. `BoxController::onCommand` returns `CommandResult {IGNORED,FIRED,DUPLICATE,REJECTED}` to drive this.
 
 ## 6.5 LED / status indication
 
