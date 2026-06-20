@@ -5,3 +5,7 @@
 .vscode/launch.json
 .vscode/ipch
 build/
+
+# playwright/screenshot scratch
+.playwright-mcp/
+sim-armed.png
