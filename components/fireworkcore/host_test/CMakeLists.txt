@@ -17,3 +17,6 @@ add_test(NAME test_crc32 COMMAND test_crc32)
 
 add_executable(test_protocol test_protocol.cpp ${CORE_SRC})
 add_test(NAME test_protocol COMMAND test_protocol)
+
+add_executable(test_recent_ids test_recent_ids.cpp ${CORE_SRC})
+add_test(NAME test_recent_ids COMMAND test_recent_ids)
