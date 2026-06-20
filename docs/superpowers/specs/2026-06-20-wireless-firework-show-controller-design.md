@@ -4,7 +4,8 @@
 - **Branch:** `32ch-webui-show` (off `4channel-ssr`)
 - **Status:** Approved design, pre-implementation
 - **Supersedes:** the 4-channel single-master/single-slave build (kept as the proven baseline)
-- **Platform:** ESP32 for **both** controller and firing boxes, on **ESP-IDF v6.0** (installed at `C:\esp\v6.0.1\esp-idf`). One firmware codebase, one chip family, a role flag distinguishes controller vs box. Host unit tests build with MinGW UCRT g++ + CMake + Ninja.
+- **Platform:** ESP32 for **both** controller and firing boxes, on **ESP-IDF v6.0.1** (installed at `C:\esp\v6.0.1\esp-idf`). One firmware codebase, one chip family, a role flag distinguishes controller vs box. Host unit tests build with MinGW UCRT g++ + CMake + Ninja.
+- **Toolchain reality (verified 2026-06-20):** ESP-IDF on Windows does **NOT** support Git Bash/MSys (`export.sh` aborts with "MSys/Mingw is not supported"). `idf.py` must be driven from **PowerShell**: activate with `& 'C:\esp\v6.0.1\esp-idf\export.ps1'` then `idf.py set-target esp32` / `idf.py build`. The host-only `fireworkcore` tests continue to use Git Bash + CMake/Ninja/g++ (unaffected). So: firmware = PowerShell + idf.py; safety-core unit tests = Git Bash + ctest.
 
 ## 1. Goal
 
