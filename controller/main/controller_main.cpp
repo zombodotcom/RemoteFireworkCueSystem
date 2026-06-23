@@ -1,5 +1,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/queue.h"
 #include "esp_timer.h"
 #include "esp_log.h"
 #include "esp_wifi.h"
@@ -10,8 +11,15 @@
 #include "espnow_tx.h"
 #include "box_link.h"
 #include "show_runner.h"
+#include "web_server.h"
 
 static const char* TAG = "controller";
+
+// Definitions of the shared globals declared (extern) in web_server.h.
+fw::SeqStep    g_runSteps[MAX_RUN_STEPS];
+size_t         g_runCount  = 0;
+QueueHandle_t  g_cmdQueue  = nullptr;
+StatusSnapshot g_status    = {};
 
 extern "C" void app_main(void) {
     // NVS init (required by WiFi and ConfigStore).
@@ -40,14 +48,50 @@ extern "C" void app_main(void) {
     fw::BoxLinkConfig lk_cfg;
     lk_cfg.ackTimeoutMs = ctrl::ACK_TIMEOUT_MS;
     lk_cfg.maxRetries   = ctrl::MAX_RETRIES;
-    static fw::BoxLink   link(tx, lk_cfg);
+    static fw::BoxLink    link(tx, lk_cfg);
     static fw::ShowRunner runner(link, ctrl::HEARTBEAT_MS);
 
-    // Control loop: drain ACKs, then tick ShowRunner at 20 ms.
-    // No arming here — Task 4 adds the web API that drives arm/disarm/fire.
-    // The runner stays disarmed; ShowRunner.tick() is a no-op when disarmed.
+    // Create the command queue (depth 8, element = UiCommand).
+    g_cmdQueue = xQueueCreate(8, sizeof(UiCommand));
+    configASSERT(g_cmdQueue);
+
+    // Start the web server — handlers reach runner via g_cmdQueue / g_status.
+    static WebServer web;
+    ESP_ERROR_CHECK(web.start(g_cmdQueue, &g_status));
+
+    // Control loop: drain cmd queue → drive runner, drain ACKs, tick runner at ~20 ms.
     while (true) {
         uint32_t now = static_cast<uint32_t>(esp_timer_get_time() / 1000);
+
+        // --- Drain the command queue (web handlers post here; only this task pops) ---
+        UiCommand cmd;
+        while (xQueueReceive(g_cmdQueue, &cmd, 0) == pdTRUE) {
+            switch (cmd.type) {
+                case CmdType::ARM:
+                    runner.arm(now);
+                    break;
+                case CmdType::DISARM:
+                    runner.disarm(now);
+                    break;
+                case CmdType::ESTOP:
+                    runner.estop(now);
+                    break;
+                case CmdType::STOP:
+                    runner.stopSequence(now);
+                    break;
+                case CmdType::HEARTBEAT:
+                    // Heartbeat is implicit in runner.tick(); no explicit call needed.
+                    break;
+                case CmdType::FIRE:
+                    runner.fireManual(cmd.boxId, cmd.channel, now);
+                    break;
+                case CmdType::RUN:
+                    // g_runSteps/g_runCount were written by the handler before enqueue.
+                    runner.loadSequence(g_runSteps, g_runCount);
+                    runner.startSequence(now);
+                    break;
+            }
+        }
 
         // Drain ACK queue (WiFi task posts here; we consume from control loop only).
         uint32_t ack_id = 0;
@@ -56,6 +100,11 @@ extern "C" void app_main(void) {
         }
 
         runner.tick(now);
+
+        // Update status snapshot — written here (control loop), read by status handler.
+        g_status.armed         = runner.armed();
+        g_status.seqRunning    = runner.sequenceRunning();
+        g_status.lastFailedBox = 0xFF;  // Not yet exposed by ShowRunner API; 0xFF = none.
 
         vTaskDelay(pdMS_TO_TICKS(20));
     }
