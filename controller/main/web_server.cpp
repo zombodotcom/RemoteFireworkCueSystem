@@ -131,15 +131,19 @@ static bool parse_run_json(const char* s, size_t* count) {
     return true;
 }
 
-// ── GET / ──────────────────────────────────────────────────────────────────
+// ── GET / — serve embedded single-file webui ──────────────────────────────
+// www/index.html.gz is embedded at link time via EMBED_FILES in CMakeLists.txt.
+// The browser receives the raw gzip bytes; Content-Encoding: gzip tells it to decompress.
+extern const uint8_t index_html_gz_start[] asm("_binary_index_html_gz_start");
+extern const uint8_t index_html_gz_end[]   asm("_binary_index_html_gz_end");
 
 static esp_err_t handle_root(httpd_req_t* req) {
-    const char* html =
-        "<!DOCTYPE html><html><body>"
-        "<h1>Firework Controller &mdash; API up</h1>"
-        "</body></html>";
     httpd_resp_set_type(req, "text/html");
-    return httpd_resp_send(req, html, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
+    size_t len = static_cast<size_t>(index_html_gz_end - index_html_gz_start);
+    return httpd_resp_send(req,
+        reinterpret_cast<const char*>(index_html_gz_start),
+        static_cast<ssize_t>(len));
 }
 
 // ── Simple POST handlers (no body required) ────────────────────────────────
@@ -236,10 +240,11 @@ static esp_err_t handle_status(httpd_req_t* req) {
 
 // ── WebServer::start ────────────────────────────────────────────────────────
 
-esp_err_t WebServer::start(QueueHandle_t /*cmdQueue*/, StatusSnapshot* /*snap*/) {
-    // g_cmdQueue and g_status are the shared globals defined in controller_main.cpp
-    // and declared extern in web_server.h — handlers use them directly.
-    // The parameters are accepted for API clarity / future use.
+esp_err_t WebServer::start(QueueHandle_t cmdQueue, StatusSnapshot* /*snap*/) {
+    // Assign the caller-provided queue to the global so the interface contract
+    // is honest: a caller passing cmdQueue through this API has it wired up.
+    // snap is kept for API clarity; g_status is the same object (&g_status == snap).
+    g_cmdQueue = cmdQueue;
 
     httpd_config_t config    = HTTPD_DEFAULT_CONFIG();
     config.lru_purge_enable  = true;
