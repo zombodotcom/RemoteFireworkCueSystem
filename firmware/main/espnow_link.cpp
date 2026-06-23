@@ -25,6 +25,11 @@ esp_err_t EspNowLink::begin(const uint8_t controllerMac[6]) {
     ESP_ERROR_CHECK(esp_wifi_set_storage(WIFI_STORAGE_RAM));
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_start());
+    // Pin the ESP-NOW channel to match the controller's SoftAP channel. A STA
+    // that never associates otherwise sits on the driver default; if box and
+    // controller diverge, ESP-NOW silently delivers nothing. Must equal the
+    // controller's WIFI_CHAN (controller_config.h, channel 1).
+    ESP_ERROR_CHECK(esp_wifi_set_channel(1, WIFI_SECOND_CHAN_NONE));
 
     esp_err_t err = esp_now_init();
     if (err != ESP_OK) { ESP_LOGE(TAG, "esp_now_init failed: %d", err); return err; }
