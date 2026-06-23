@@ -17,5 +17,5 @@ constexpr int STATUS_LED_GPIO = 5;            // addressable LED data
 constexpr int STATUS_LED_COUNT = 1;
 constexpr uint8_t THIS_BOX_ID = 0;            // box 1 = 0, box 2 = 1 (flash per box)
 // Controller MAC the box accepts traffic from (fill in from the controller's printed MAC).
-constexpr uint8_t CONTROLLER_MAC[6] = {0x00,0x00,0x00,0x00,0x00,0x00};
+constexpr uint8_t CONTROLLER_MAC[6] = {0xb0,0xcb,0xd8,0x89,0x9e,0x69}; // controller SoftAP MAC
 }
