@@ -2,30 +2,68 @@
 #include "freertos/task.h"
 #include "esp_timer.h"
 #include "esp_log.h"
+#include "nvs_flash.h"
+#include "driver/i2c_master.h"
 #include "box_controller.h"
-#include "stub_channel_driver.h"
+#include "board_config.h"
+#include "expander_driver.h"
+#include "arm_switch.h"
+#include "status_leds.h"
+#include "espnow_link.h"
 
 static const char* TAG = "firing_box";
 
 extern "C" void app_main(void) {
-    static StubChannelDriver driver;
-    fw::BoxConfig cfg;            // boxId 0, fireMs 400, default arming
+    ESP_ERROR_CHECK(nvs_flash_init());
+
+    // I2C bus
+    i2c_master_bus_config_t bc = {};
+    bc.i2c_port = -1;                    // auto-select
+    bc.sda_io_num = (gpio_num_t)board::I2C_SDA_GPIO;
+    bc.scl_io_num = (gpio_num_t)board::I2C_SCL_GPIO;
+    bc.clk_source = I2C_CLK_SRC_DEFAULT;
+    bc.glitch_ignore_cnt = 7;
+    i2c_master_bus_handle_t bus = nullptr;
+    ESP_ERROR_CHECK(i2c_new_master_bus(&bc, &bus));
+
+    static ExpanderChannelDriver driver(bus, board::EXPANDER_I2C_ADDR, board::FIRE_LEVEL);
+    ESP_ERROR_CHECK(driver.begin());     // outputs OFF before anything else
+
+    fw::BoxConfig cfg; cfg.boxId = board::THIS_BOX_ID;
     static fw::BoxController box(driver, cfg);
-    box.begin();                  // boot-safe: outputs off, SAFE
+    box.begin();                         // boot-safe: SAFE, all off
 
-    ESP_LOGI(TAG, "firing box booted: SAFE, outputs off");
+    static ArmSwitch armSwitch(board::ARM_SWITCH_GPIO); armSwitch.begin();
+    static StatusLeds leds(board::STATUS_LED_GPIO, board::STATUS_LED_COUNT); leds.begin();
 
-    // Skeleton loop. Plan 3 adds: arm-switch GPIO -> setPhysicalSwitch,
-    // esp_now RX -> box.onCommand, led_strip status, and the real ChannelDriver.
+    static EspNowLink link;
+    link.setOnCommand([](const fw::CommandPacket& pkt) {
+        uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
+        fw::CommandResult r = box.onCommand(pkt, now);
+        // ACK FIRED (1=IGNITED_OK) and DUPLICATE (2=ALREADY_FIRED) so that a lost
+        // ACK self-heals on the controller's same-id retry.
+        // Do NOT ACK REJECTED (genuinely not fired — controller must know).
+        if (r == fw::CommandResult::FIRED || r == fw::CommandResult::DUPLICATE) {
+            fw::AckPacket ack{};
+            ack.type = (uint8_t)fw::MsgType::ACK;
+            ack.responseToId = pkt.id;
+            ack.deviceStatus = (r == fw::CommandResult::FIRED) ? 1 : 2; // 1=IGNITED_OK, 2=ALREADY_FIRED
+            ack.timestamp = now;
+            ack.crc = fw::computeCrc(ack);
+            link.sendAck(ack);
+        }
+    });
+    ESP_ERROR_CHECK(link.begin(board::CONTROLLER_MAC));
 
-    // SAFETY: the box never calls setSequenceRunning(true) — the heartbeat
-    // dead-man (see arming.h FIRMWARE CONTRACT) is therefore always active.
-    // Do NOT wire a controller "sequence running" flag into the box, or link-loss
-    // protection would be silently suspended. The controller runs sequences; the
-    // box only receives individual FIRE cues + continuous HEARTBEATs.
+    ESP_LOGI(TAG, "firing box %u booted: SAFE, outputs off", cfg.boxId);
+
+    // SAFETY: the box never calls setSequenceRunning(true) — heartbeat dead-man always active.
     while (true) {
-        uint32_t nowMs = (uint32_t)(esp_timer_get_time() / 1000);
-        box.tick(nowMs);
+        uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
+        box.setPhysicalSwitch(armSwitch.isOn(), now);   // hardware-authoritative
+        box.tick(now);
+        bool linkAlive = (now - link.lastRxMs()) < 2000;
+        leds.show(box.state(), false /*estopped surfaced via BoxState*/, linkAlive, now);
         vTaskDelay(pdMS_TO_TICKS(20));
     }
 }

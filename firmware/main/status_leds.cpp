@@ -1,4 +1,7 @@
 #include "status_leds.h"
+#include "esp_log.h"
+
+static const char* TAG = "status_leds";
 
 void StatusLeds::begin() {
     led_strip_config_t sc = {};
@@ -6,11 +9,17 @@ void StatusLeds::begin() {
     sc.max_leds = count_;
     led_strip_rmt_config_t rc = {};
     rc.resolution_hz = 10 * 1000 * 1000;
-    led_strip_new_rmt_device(&sc, &rc, &strip_);
+    esp_err_t err = led_strip_new_rmt_device(&sc, &rc, &strip_);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "led_strip_new_rmt_device failed: %d (LED strip disabled)", err);
+        strip_ = nullptr;
+        return;
+    }
     led_strip_clear(strip_);
 }
 
 void StatusLeds::show(fw::BoxState state, bool estopped, bool linkAlive, uint32_t nowMs) {
+    if (!strip_) return;  // init failed — skip to avoid hard-fault
     uint8_t r=0,g=0,b=0;
     if (estopped)                              { bool on = (nowMs / 150) % 2; r = on ? 60 : 0; }  // fast red blink
     else if (state == fw::BoxState::ARMED)     { g = 60; }                                        // green
