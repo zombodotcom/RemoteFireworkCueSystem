@@ -1,11 +1,12 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import { snapshot, config, connection } from "../stores";
-  import { SimConnection } from "../core/connection";
+  import { createConnection } from "../core/connection";
+  import type { SystemConnection } from "../core/connection";
   import BoxPanel from "./BoxPanel.svelte";
   import TransportControls from "./TransportControls.svelte";
 
-  let conn: SimConnection | null = null;
+  let conn: SystemConnection | null = null;
 
   function labelsFor(boxId: number): string[] {
     const arr = new Array(16).fill("");
@@ -14,7 +15,7 @@
   }
 
   onMount(async () => {
-    conn = await SimConnection.create();
+    conn = await createConnection();
     conn.start();
     connection.set(conn);
   });

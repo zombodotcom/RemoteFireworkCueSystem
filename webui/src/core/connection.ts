@@ -1,5 +1,6 @@
 import { loadRig, type Rig } from "./wasm";
 import { snapshot, type Snapshot, type BoxView } from "../stores";
+import { LiveConnection } from "./live_connection";
 
 export interface SystemConnection {
   setSwitch(box: number, on: boolean): void;
@@ -75,4 +76,15 @@ export class SimConnection implements SystemConnection {
     const snap: Snapshot = { now: this.now, seqRunning: this.rig.seqRunning(), boxes };
     snapshot.set(snap);
   }
+}
+
+// ── Factory ────────────────────────────────────────────────────────────────
+// Returns a SimConnection when running on the Vite dev server (import.meta.env.DEV),
+// and a LiveConnection when served from the ESP32 controller (production build).
+export async function createConnection(): Promise<SystemConnection> {
+  if (import.meta.env.DEV) {
+    return SimConnection.create();
+  }
+  const live = new LiveConnection();
+  return live;
 }
