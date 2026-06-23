@@ -4,7 +4,6 @@
 #include "esp_netif.h"
 #include "esp_event.h"
 #include "esp_log.h"
-#include "esp_timer.h"
 #include <cstring>
 
 static const char* TAG = "espnow";
@@ -13,6 +12,10 @@ static EspNowLink* g_self = nullptr;
 esp_err_t EspNowLink::begin(const uint8_t controllerMac[6]) {
     g_self = this;
     memcpy(ctrlMac_, controllerMac, 6);
+
+    // Create the RX queue before registering the recv callback.
+    rxQueue_ = xQueueCreate(16, sizeof(fw::CommandPacket));
+    if (!rxQueue_) { ESP_LOGE(TAG, "xQueueCreate failed"); return ESP_ERR_NO_MEM; }
 
     // WiFi stack must be initialised before esp_now_init().
     ESP_ERROR_CHECK(esp_netif_init());
@@ -39,12 +42,17 @@ esp_err_t EspNowLink::begin(const uint8_t controllerMac[6]) {
 }
 
 void EspNowLink::rxTrampoline(const esp_now_recv_info_t* /*info*/, const uint8_t* data, int len) {
-    if (!g_self || !g_self->cb_) return;
+    if (!g_self || !g_self->rxQueue_) return;
     if (len < (int)sizeof(fw::CommandPacket)) return;  // length guard; CRC checked in onCommand
-    g_self->lastRxMs_ = (uint32_t)(esp_timer_get_time() / 1000);
     fw::CommandPacket pkt;
     memcpy(&pkt, data, sizeof(pkt));
-    g_self->cb_(pkt);
+    // esp_now recv cb runs in WiFi task context (not ISR) — use non-blocking xQueueSend.
+    // Drop silently if queue is full; the controller's retry logic will recover.
+    xQueueSend(g_self->rxQueue_, &pkt, 0);
+}
+
+bool EspNowLink::receive(fw::CommandPacket& out) {
+    return rxQueue_ && xQueueReceive(rxQueue_, &out, 0) == pdTRUE;
 }
 
 esp_err_t EspNowLink::sendAck(const fw::AckPacket& ack) {

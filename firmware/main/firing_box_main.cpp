@@ -37,32 +37,38 @@ extern "C" void app_main(void) {
     static StatusLeds leds(board::STATUS_LED_GPIO, board::STATUS_LED_COUNT); leds.begin();
 
     static EspNowLink link;
-    link.setOnCommand([](const fw::CommandPacket& pkt) {
-        uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
-        fw::CommandResult r = box.onCommand(pkt, now);
-        // ACK FIRED (1=IGNITED_OK) and DUPLICATE (2=ALREADY_FIRED) so that a lost
-        // ACK self-heals on the controller's same-id retry.
-        // Do NOT ACK REJECTED (genuinely not fired — controller must know).
-        if (r == fw::CommandResult::FIRED || r == fw::CommandResult::DUPLICATE) {
-            fw::AckPacket ack{};
-            ack.type = (uint8_t)fw::MsgType::ACK;
-            ack.responseToId = pkt.id;
-            ack.deviceStatus = (r == fw::CommandResult::FIRED) ? 1 : 2; // 1=IGNITED_OK, 2=ALREADY_FIRED
-            ack.timestamp = now;
-            ack.crc = fw::computeCrc(ack);
-            link.sendAck(ack);
-        }
-    });
     ESP_ERROR_CHECK(link.begin(board::CONTROLLER_MAC));
 
     ESP_LOGI(TAG, "firing box %u booted: SAFE, outputs off", cfg.boxId);
 
+    uint32_t lastRxMs = 0;
+
     // SAFETY: the box never calls setSequenceRunning(true) — heartbeat dead-man always active.
     while (true) {
         uint32_t now = (uint32_t)(esp_timer_get_time() / 1000);
+
+        // Drain received commands (single-threaded: no race with tick()).
+        fw::CommandPacket pkt;
+        while (link.receive(pkt)) {
+            lastRxMs = now;
+            fw::CommandResult r = box.onCommand(pkt, now);
+            // ACK FIRED (1=IGNITED_OK) and DUPLICATE (2=ALREADY_FIRED) so that a lost
+            // ACK self-heals on the controller's same-id retry.
+            // Do NOT ACK REJECTED (genuinely not fired — controller must know).
+            if (r == fw::CommandResult::FIRED || r == fw::CommandResult::DUPLICATE) {
+                fw::AckPacket ack{};
+                ack.type = (uint8_t)fw::MsgType::ACK;
+                ack.responseToId = pkt.id;
+                ack.deviceStatus = (r == fw::CommandResult::FIRED) ? 1 : 2; // 1=IGNITED_OK, 2=ALREADY_FIRED
+                ack.timestamp = now;
+                ack.crc = fw::computeCrc(ack);
+                link.sendAck(ack);
+            }
+        }
+
         box.setPhysicalSwitch(armSwitch.isOn(), now);   // hardware-authoritative
         box.tick(now);
-        bool linkAlive = (now - link.lastRxMs()) < 2000;
+        bool linkAlive = (now - lastRxMs) < 2000;
         leds.show(box.state(), false /*estopped surfaced via BoxState*/, linkAlive, now);
         vTaskDelay(pdMS_TO_TICKS(20));
     }
