@@ -53,10 +53,14 @@ CommandResult BoxController::onCommand(const CommandPacket& pkt, uint32_t nowMs)
 
 void BoxController::tick(uint32_t nowMs) {
     arm_.update(nowMs);
-    // Invariant: if not ARMED, no channel may be energized. Idempotent — covers
-    // every path to SAFE (disarm command, heartbeat-loss, switch-off, E-STOP)
-    // without relying on edge-detection timing (see arming.h FIRMWARE CONTRACT).
-    if (arm_.state() != BoxState::ARMED) deenergizeAll();
+    // Invariant: not ARMED => no channel energized. Only WRITE when something is
+    // actually on (avoids hammering the I2C bus every idle tick, and avoids a
+    // missing/flaky expander stalling the loop on repeated write timeouts).
+    if (arm_.state() != BoxState::ARMED) {
+        bool anyOn = false;
+        for (int i = 0; i < MAX_CHANNELS; i++) { if (firing_[i]) { anyOn = true; break; } }
+        if (anyOn) deenergizeAll();
+    }
     // Expire bounded fire pulses (when still ARMED).
     for (int i = 0; i < MAX_CHANNELS; i++) {
         if (firing_[i] && nowMs >= offAtMs_[i]) { drv_.setChannel((uint8_t)i, false); firing_[i] = false; }

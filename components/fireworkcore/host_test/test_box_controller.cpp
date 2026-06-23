@@ -175,6 +175,26 @@ void test_result_duplicate_still_no_double_fire() {
     CHECK_EQ(drv.countOn(), 0);                                   // must NOT re-fire
 }
 
+void test_idle_safe_tick_does_not_spam_alloff() {
+    FakeChannelDriver drv;
+    BoxController b(drv, BoxConfig{});
+    b.begin();                          // one allOff at boot
+    int afterBoot = drv.allOffCount;
+    for (int i = 0; i < 5; i++) b.tick((uint32_t)(i * 20));  // idle SAFE ticks
+    CHECK_EQ(drv.allOffCount, afterBoot);   // NO further allOff writes while idle SAFE
+}
+void test_not_armed_with_live_channel_still_deenergizes_on_tick() {
+    FakeChannelDriver drv;
+    BoxController b = armedBox(drv, 0);     // armed
+    b.onCommand(cmd(MsgType::FIRE, 90, 0, 7, 0), 0);  // channel 7 live
+    CHECK(drv.on[7]);
+    b.onCommand(cmd(MsgType::DISARM, 91, 0, 0, 0), 5); // disarm (doesn't force-off itself)
+    int before = drv.allOffCount;
+    b.tick(6);                              // tick must de-energize the live channel
+    CHECK(drv.allOffCount > before);
+    CHECK_EQ(drv.countOn(), 0);
+}
+
 int main() {
     RUN(test_begin_is_safe_and_alloff);
     RUN(test_fire_when_armed_energizes_then_expires);
@@ -195,5 +215,7 @@ int main() {
     RUN(test_result_rejected_when_disarmed);
     RUN(test_result_ignored_wrong_box);
     RUN(test_result_duplicate_still_no_double_fire);
+    RUN(test_idle_safe_tick_does_not_spam_alloff);
+    RUN(test_not_armed_with_live_channel_still_deenergizes_on_tick);
     return REPORT();
 }
