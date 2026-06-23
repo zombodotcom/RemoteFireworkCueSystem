@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.16)
+project(expander_codec_test CXX)
+set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+enable_testing()
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../main ${CMAKE_CURRENT_SOURCE_DIR})
+add_executable(test_codec test_codec.cpp)
+add_test(NAME test_codec COMMAND test_codec)
