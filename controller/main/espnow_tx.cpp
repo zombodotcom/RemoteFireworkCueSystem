@@ -50,6 +50,11 @@ esp_err_t EspNowTransport::begin() {
 
     // Add both box MACs as peers (channel 0 = follow current WiFi channel).
     for (int i = 0; i < 2; i++) {
+        // Skip an unconfigured (all-zero) box MAC so a single-box deployment
+        // still boots; esp_now_send to it later fails gracefully (ESP_ERR_ESPNOW_NOT_FOUND).
+        bool isNull = true;
+        for (int b = 0; b < 6; b++) if (ctrl::BOX_MAC[i][b]) { isNull = false; break; }
+        if (isNull) { ESP_LOGW(TAG, "BOX_MAC[%d] is null — skipping peer (not configured)", i); continue; }
         esp_now_peer_info_t peer = {};
         memcpy(peer.peer_addr, ctrl::BOX_MAC[i], 6);
         peer.channel = 0;
