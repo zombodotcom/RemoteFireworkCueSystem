@@ -27,7 +27,14 @@ extern "C" void app_main(void) {
     ESP_ERROR_CHECK(i2c_new_master_bus(&bc, &bus));
 
     static ExpanderChannelDriver driver(bus, board::EXPANDER_I2C_ADDR, board::FIRE_LEVEL);
-    ESP_ERROR_CHECK(driver.begin());     // outputs OFF before anything else
+    // Boot to SAFE even if the expander can't be reached: the external pull
+    // resistors hold every SSR input OFF, so an unreachable expander is the
+    // safest state, not a reason to reboot-loop. Log the fault loudly.
+    esp_err_t derr = driver.begin();     // writes the all-OFF word first
+    if (derr != ESP_OK) {
+        ESP_LOGE(TAG, "expander init FAILED (%s) — booting SAFE; outputs held off by pull resistors",
+                 esp_err_to_name(derr));
+    }
 
     fw::BoxConfig cfg; cfg.boxId = board::THIS_BOX_ID;
     static fw::BoxController box(driver, cfg);
