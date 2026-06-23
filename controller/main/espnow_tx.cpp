@@ -57,7 +57,8 @@ esp_err_t EspNowTransport::begin() {
         if (isNull) { ESP_LOGW(TAG, "BOX_MAC[%d] is null — skipping peer (not configured)", i); continue; }
         esp_now_peer_info_t peer = {};
         memcpy(peer.peer_addr, ctrl::BOX_MAC[i], 6);
-        peer.channel = 0;
+        peer.channel = ctrl::WIFI_CHAN;   // match the SoftAP channel
+        peer.ifidx   = WIFI_IF_AP;        // controller is AP-only — send via the AP interface, not STA (which is down)
         peer.encrypt = false;
         err = esp_now_add_peer(&peer);
         if (err != ESP_OK) {
