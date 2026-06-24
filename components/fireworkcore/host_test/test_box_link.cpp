@@ -9,6 +9,33 @@ struct FakeTransport : public Transport {
 };
 static int countType(FakeTransport& t, MsgType ty){int n=0;for(auto&s:t.sent)if((MsgType)s.pkt.type==ty)n++;return n;}
 
+struct RecObs : public BoxLinkObserver {
+    int sent=0, ack=0, retry=0, failed=0;
+    uint32_t lastLatency=0, lastAttempt=0, lastMax=0;
+    void onFireSent(uint8_t, uint8_t, uint32_t) override { sent++; }
+    void onFireAck(uint8_t, uint8_t, uint32_t, uint32_t lat) override { ack++; lastLatency=lat; }
+    void onFireRetry(uint8_t, uint8_t, uint32_t, uint8_t a, uint8_t m) override { retry++; lastAttempt=a; lastMax=m; }
+    void onFireFailed(uint8_t, uint8_t, uint32_t) override { failed++; }
+};
+void test_observer_fire_and_ack_latency() {
+    FakeTransport t; BoxLink link(t); RecObs o; link.setObserver(&o);
+    uint32_t id = link.fire(0, 3, 100);
+    CHECK_EQ(o.sent, 1);
+    link.onAck(id, 112);                 // 12 ms after send
+    CHECK_EQ(o.ack, 1);
+    CHECK_EQ((int)o.lastLatency, 12);
+}
+void test_observer_retry_then_fail() {
+    FakeTransport t; BoxLink link(t); RecObs o; link.setObserver(&o);  // ackTimeout=120, maxRetries=3
+    link.fire(0, 3, 0);
+    uint32_t now = 0;
+    for (int i=0;i<5;i++){ now += 130; link.tick(now); }
+    CHECK_EQ(o.retry, 3);                // 3 retries
+    CHECK_EQ((int)o.lastMax, 3);
+    CHECK_EQ((int)o.lastAttempt, 3);
+    CHECK_EQ(o.failed, 1);               // then gave up once
+}
+
 void test_fire_sends_once_and_pends() {
     FakeTransport t; BoxLink link(t);
     uint32_t id = link.fire(0, 3, 0);
@@ -46,4 +73,4 @@ void test_control_msgs_send_immediately() {
     CHECK_EQ(countType(t, MsgType::ESTOP), 1);
     CHECK_EQ(countType(t, MsgType::HEARTBEAT), 1);
 }
-int main(){RUN(test_fire_sends_once_and_pends);RUN(test_ack_clears_pending);RUN(test_resend_same_id_after_timeout);RUN(test_gives_up_after_max_retries);RUN(test_control_msgs_send_immediately);return REPORT();}
+int main(){RUN(test_fire_sends_once_and_pends);RUN(test_ack_clears_pending);RUN(test_resend_same_id_after_timeout);RUN(test_gives_up_after_max_retries);RUN(test_control_msgs_send_immediately);RUN(test_observer_fire_and_ack_latency);RUN(test_observer_retry_then_fail);return REPORT();}

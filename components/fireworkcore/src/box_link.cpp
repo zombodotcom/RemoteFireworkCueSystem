@@ -36,6 +36,7 @@ uint32_t BoxLink::fire(uint8_t boxId, uint8_t channel, uint32_t nowMs) {
     sentAtMs_   = nowMs;
     retries_    = 0;
     sendFire(boxId, channel, id);
+    if (observer_) observer_->onFireSent(boxId, channel, id);
     return id;
 }
 
@@ -64,8 +65,8 @@ void BoxLink::heartbeat(uint32_t nowMs) {
 }
 
 void BoxLink::onAck(uint32_t responseToId, uint32_t nowMs) {
-    (void)nowMs;
     if (pendingId_ != 0 && responseToId == pendingId_) {
+        if (observer_) observer_->onFireAck(pendingBox_, pendingCh_, pendingId_, nowMs - sentAtMs_);
         pendingId_ = 0;
     }
 }
@@ -79,9 +80,11 @@ void BoxLink::tick(uint32_t nowMs) {
         sendFire(pendingBox_, pendingCh_, pendingId_);
         retries_++;
         sentAtMs_ = nowMs;
+        if (observer_) observer_->onFireRetry(pendingBox_, pendingCh_, pendingId_, retries_, cfg_.maxRetries);
     } else {
         // Exhausted retries — give up.
         lastFailedId_ = pendingId_;
+        if (observer_) observer_->onFireFailed(pendingBox_, pendingCh_, pendingId_);
         pendingId_ = 0;
     }
 }

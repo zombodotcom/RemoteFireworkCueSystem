@@ -16,6 +16,16 @@ struct BoxLinkConfig {
     uint8_t  maxRetries   = 3;
 };
 
+// Passive observer for controller-side instrumentation (logging/telemetry).
+// Hooks are best-effort and MUST NOT affect link behavior. Default no-ops.
+struct BoxLinkObserver {
+    virtual void onFireSent(uint8_t box, uint8_t ch, uint32_t id) {}
+    virtual void onFireAck(uint8_t box, uint8_t ch, uint32_t id, uint32_t latencyMs) {}
+    virtual void onFireRetry(uint8_t box, uint8_t ch, uint32_t id, uint8_t attempt, uint8_t maxRetries) {}
+    virtual void onFireFailed(uint8_t box, uint8_t ch, uint32_t id) {}
+    virtual ~BoxLinkObserver() {}
+};
+
 // BoxLink: controller-side ESP-NOW TX with ACK tracking + retry.
 // Single FIRE-in-flight design — controller fires cues sequentially.
 // All time injected as nowMs; no clock reads.
@@ -42,6 +52,8 @@ public:
     bool     pendingAck()    const;
     uint32_t lastFailedId()  const;
 
+    void setObserver(BoxLinkObserver* obs) { observer_ = obs; }
+
 private:
     Transport&    transport_;
     BoxLinkConfig cfg_;
@@ -53,6 +65,7 @@ private:
     uint32_t sentAtMs_    = 0;
     uint8_t  retries_     = 0;
     uint32_t lastFailedId_ = 0;
+    BoxLinkObserver* observer_ = nullptr;
 
     void sendFire(uint8_t boxId, uint8_t channel, uint32_t id);
     CommandPacket buildPacket(MsgType type, uint32_t id, uint8_t boxId,
