@@ -31,6 +31,9 @@ public:
     // Non-blocking dequeue of one box status report. Control loop only.
     bool receiveStatus(StatusReport& out);
 
+    void sendDisplayStatus(const fw::DisplayStatusPacket& p);
+    void sendDisplayEvent(const fw::DisplayEventPacket& e);
+
 private:
     // Static trampoline: C callback can't capture `this`.
     static EspNowTransport* g_self;

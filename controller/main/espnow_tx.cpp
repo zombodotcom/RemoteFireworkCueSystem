@@ -69,6 +69,15 @@ esp_err_t EspNowTransport::begin() {
         }
     }
 
+    // Broadcast peer for display frames (CYD listens; no association needed).
+    esp_now_peer_info_t bpeer = {};
+    memset(bpeer.peer_addr, 0xFF, 6);
+    bpeer.channel = ctrl::WIFI_CHAN;
+    bpeer.ifidx   = WIFI_IF_AP;
+    bpeer.encrypt = false;
+    err = esp_now_add_peer(&bpeer);
+    if (err != ESP_OK) { ESP_LOGE(TAG, "add broadcast peer: %s", esp_err_to_name(err)); return err; }
+
     err = esp_now_register_recv_cb(&EspNowTransport::rxCallback);
     if (err != ESP_OK) ESP_LOGE(TAG, "register_recv_cb: %s", esp_err_to_name(err));
     return err;
@@ -90,6 +99,14 @@ bool EspNowTransport::receiveAck(uint32_t& responseToId) {
 bool EspNowTransport::receiveStatus(StatusReport& out) {
     if (!statusQueue_) return false;
     return xQueueReceive(statusQueue_, &out, 0) == pdTRUE;
+}
+
+static const uint8_t kBroadcast[6] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
+void EspNowTransport::sendDisplayStatus(const fw::DisplayStatusPacket& p) {
+    esp_now_send(kBroadcast, reinterpret_cast<const uint8_t*>(&p), sizeof(p));
+}
+void EspNowTransport::sendDisplayEvent(const fw::DisplayEventPacket& e) {
+    esp_now_send(kBroadcast, reinterpret_cast<const uint8_t*>(&e), sizeof(e));
 }
 
 // Static RX callback — runs in WiFi task, not the control-loop task.

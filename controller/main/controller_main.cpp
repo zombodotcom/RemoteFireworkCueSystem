@@ -14,6 +14,7 @@
 #include "show_runner.h"
 #include "web_server.h"
 #include <cstdarg>
+#include <cstring>
 
 static const char* TAG = "controller";
 
@@ -109,6 +110,8 @@ extern "C" void app_main(void) {
     static uint32_t lastStatusMs[2] = {0, 0};
     static bool prevSeq = false;
     static bool prevLink[2] = {false, false};
+    static uint32_t lastDispMs = 0;
+    static uint32_t lastDispSeq = 0;
     while (true) {
         uint32_t now = static_cast<uint32_t>(esp_timer_get_time() / 1000);
 
@@ -192,6 +195,45 @@ extern "C" void app_main(void) {
             if (configured && !g_status.boxes[b].linkAlive) anyLinkDown = true;
         }
         g_status.faultCode = g_estop ? 1 : (g_fireFailed ? 3 : (anyLinkDown ? 2 : 0));
+
+        // --- Broadcast display status (~1 Hz) for ESP-NOW display panels (CYD) ---
+        if (now - lastDispMs >= 1000) {
+            lastDispMs = now;
+            fw::DisplayStatusPacket dp{};
+            dp.type           = (uint8_t)fw::MsgType::DISP_STATUS;
+            dp.boxState       = g_status.boxes[0].state;
+            dp.boxLinkAlive   = g_status.boxes[0].linkAlive ? 1 : 0;
+            dp.rssi           = g_status.boxes[0].rssi;
+            dp.firedBitmap    = g_status.boxes[0].firedBitmap;
+            dp.lastFired      = (g_status.boxes[0].lastFiredChannel == 0xFF) ? -1 : (int8_t)g_status.boxes[0].lastFiredChannel;
+            dp.seqRunning     = g_status.seqRunning ? 1 : 0;
+            dp.faultCode      = g_status.faultCode;
+            dp.uptimeMs       = g_status.diag.uptimeMs;
+            dp.freeHeap       = g_status.diag.freeHeap;
+            dp.apClients      = g_status.diag.apClients;
+            dp.fired          = g_status.diag.fired;
+            dp.acked          = g_status.diag.acked;
+            dp.failed         = g_status.diag.failed;
+            dp.retries        = g_status.diag.retries;
+            dp.lastAckMs      = g_status.diag.lastAckMs;
+            dp.boxLastHeardMs = g_status.boxes[0].lastHeardMs;
+            tx.sendDisplayStatus(dp);
+        }
+        // --- Broadcast any new events (bounded per tick) ---
+        if (g_eventMtx && xSemaphoreTake(g_eventMtx, pdMS_TO_TICKS(5)) == pdTRUE) {
+            ctrl::Event evs[4];
+            size_t en = g_events.since(lastDispSeq, evs, 4);
+            xSemaphoreGive(g_eventMtx);
+            for (size_t i = 0; i < en; ++i) {
+                fw::DisplayEventPacket ep{};
+                ep.type = (uint8_t)fw::MsgType::DISP_EVENT;
+                ep.sev  = evs[i].sev;
+                ep.seq  = evs[i].seq;
+                std::strncpy(ep.msg, evs[i].msg, sizeof(ep.msg) - 1);
+                tx.sendDisplayEvent(ep);
+                lastDispSeq = evs[i].seq;
+            }
+        }
 
         vTaskDelay(pdMS_TO_TICKS(20));
     }
