@@ -12,6 +12,15 @@
 #include <cstring>
 
 static const char* TAG = "espnow_rx";
+
+// Only accept display frames from the controller's SoftAP MAC. This is a SAFETY
+// display (ARMED/SAFE) — without a source check, any ESP-NOW device on channel 1
+// could broadcast a forged "SAFE" frame and make the panel lie about a hot box.
+// MAC-filtering stops interference + casual spoofing; a determined attacker who
+// spoofs this MAC is out of scope here (would need a pre-shared HMAC/LMK — see
+// NEXT-STEPS). Must match controller SoftAP MAC (firmware board_config CONTROLLER_MAC).
+static const uint8_t kControllerMac[6] = {0xb0,0xcb,0xd8,0x89,0x9e,0x69};
+
 static SemaphoreHandle_t s_mtx;
 static StatusModel       s_model;        // latest decoded status
 static uint32_t          s_lastStatusMs; // ms of last DISP_STATUS
@@ -19,8 +28,10 @@ static LogEv             s_ring[16];
 static int               s_count;
 static int               s_maxSeq;
 
-static void recv_cb(const esp_now_recv_info_t* /*info*/, const uint8_t* data, int len) {
+static void recv_cb(const esp_now_recv_info_t* info, const uint8_t* data, int len) {
     if (len < 1) return;
+    // Drop any frame not from the controller (anti-spoof for the safety display).
+    if (!info || std::memcmp(info->src_addr, kControllerMac, 6) != 0) return;
     uint8_t type = data[0];
     if (type == (uint8_t)fw::MsgType::DISP_STATUS && len == (int)sizeof(fw::DisplayStatusPacket)) {
         fw::DisplayStatusPacket p; std::memcpy(&p, data, sizeof(p));

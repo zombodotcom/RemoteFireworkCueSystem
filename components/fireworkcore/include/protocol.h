@@ -36,8 +36,11 @@ struct StatusPacket {
     uint32_t timestamp;        // box ms clock (diagnostic)
     uint32_t crc;
 };
-// Controller -> display (CYD) broadcast frames. No CRC field: ESP-NOW MAC-layer
-// CRC validates the frame; the receiver checks type + exact length.
+// Controller -> display (CYD) broadcast frames. Integrity: ESP-NOW MAC-layer CRC
+// (transmission integrity, NOT authentication). The display receiver validates
+// type + exact length AND the sender's MAC (== controller SoftAP MAC) to reject
+// spoofed/foreign frames. For a stronger guarantee against a MAC-spoofing
+// attacker, add a pre-shared HMAC + counter (deferred; see NEXT-STEPS). No CRC field.
 struct DisplayStatusPacket {
     uint8_t  type;          // MsgType::DISP_STATUS
     uint8_t  boxState;      // 0 = SAFE, 1 = ARMED

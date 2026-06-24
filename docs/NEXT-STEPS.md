@@ -35,6 +35,7 @@ _Status as of 2026-06-24 (merge of `32ch-webui-show` → `main`)._
 - [ ] Optional: graphical RSSI signal bars, night/brightness dimming.
 
 ## Known tech debt (logged in reviews, non-blocking)
+- **CYD display auth hardening**: the ESP-NOW display broadcast is now source-MAC-filtered (rejects foreign/spoofed frames), but a determined attacker who spoofs the controller's MAC could still forge a false "SAFE" on the panel. For a real deployment, add a pre-shared **HMAC + monotonic counter** to `DisplayStatusPacket`/`DisplayEventPacket` (key provisioned out-of-band), or switch to unicast ESP-NOW with a per-peer LMK. Keep `seq` as `uint32_t` end-to-end if revisiting. Also: CYD event log can stall after a *controller* reboot (seq resets) until seq catches up — status unaffected.
 - `wifi_sta_start()` (CYD) is cold-boot-only / not idempotent; `lastUpdateMs` u32 wraps at ~49 days (relative-freshness use only).
 - **Flashing reliability**: the box/controller CP210x dev boards need the manual BOOT-hold to enter download mode; the CYD's CH340 auto-resets fine. Consider the **1 µF EN→GND cap mod** on the dev boards for hands-free flashing (or do OTA, above).
 - Build host tests with **g++ forced** (`-DCMAKE_CXX_COMPILER=g++`) — CMake auto-picks a stray MSVC otherwise.
