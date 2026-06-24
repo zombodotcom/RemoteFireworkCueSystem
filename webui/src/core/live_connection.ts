@@ -1,5 +1,6 @@
 import type { SystemConnection } from "./connection";
-import { snapshot } from "../stores";
+import { snapshot, diag, fault, events as eventsStore, type Diag, type Fault } from "../stores";
+import { mergeEvents, maxSeq, type LogEvent } from "../lib/events";
 
 /**
  * LiveConnection — maps SystemConnection to the ESP32 HTTP JSON API.
@@ -32,13 +33,17 @@ interface StatusResponse {
   seqRunning: boolean;
   lastFailedBox: number | null;
   boxes?: BoxStatus[];
+  diag?: Diag;
+  fault?: Fault;
 }
+interface EventsResponse { lastSeq: number; events: LogEvent[]; }
 
 export class LiveConnection implements SystemConnection {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private statusTimer: ReturnType<typeof setInterval> | null = null;
   private connected = true;
   private pendingSteps: number[] = [];
+  private lastSeq = 0;
 
   // ── fire-and-forget POST helpers ──────────────────────────────────────────
 
@@ -107,10 +112,11 @@ export class LiveConnection implements SystemConnection {
 
     this.statusTimer = setInterval(() => {
       void this.pollStatus();
+      void this.pollEvents();
     }, STATUS_POLL_INTERVAL_MS);
 
-    // Poll immediately so the UI snaps to live state on mount.
     void this.pollStatus();
+    void this.pollEvents();
   }
 
   /** Clear both intervals. */
@@ -178,5 +184,22 @@ export class LiveConnection implements SystemConnection {
     });
 
     snapshot.set({ now: Date.now(), seqRunning: s.seqRunning, boxes });
+    if (s.diag) diag.set(s.diag);
+    if (s.fault) fault.set(s.fault);
+  }
+
+  private async pollEvents(): Promise<void> {
+    try {
+      const res = await fetch(`/api/events?since=${this.lastSeq}`);
+      if (!res.ok) return;
+      const data = (await res.json()) as EventsResponse;
+      if (data.events && data.events.length) {
+        let merged: LogEvent[] = [];
+        eventsStore.update((prev) => (merged = mergeEvents(prev, data.events)));
+        this.lastSeq = maxSeq(merged);
+      } else if (typeof data.lastSeq === "number") {
+        this.lastSeq = Math.max(this.lastSeq, data.lastSeq);
+      }
+    } catch { /* leave events stale on network error */ }
   }
 }
