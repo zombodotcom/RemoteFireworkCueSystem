@@ -195,6 +195,30 @@ void test_not_armed_with_live_channel_still_deenergizes_on_tick() {
     CHECK_EQ(drv.countOn(), 0);
 }
 
+void test_fired_mask_sets_on_fire() {
+    FakeChannelDriver drv;
+    BoxController b = armedBox(drv, 0);
+    CHECK_EQ((int)b.firedChannelMask(), 0);          // nothing fired yet
+    b.onCommand(cmd(MsgType::FIRE, 20, 0, 3, 0), 0);
+    CHECK_EQ((int)b.firedChannelMask(), (1 << 3));    // bit 3 set
+    CHECK_EQ((int)b.lastFiredChannel(), 3);
+    b.onCommand(cmd(MsgType::FIRE, 21, 0, 5, 0), 0);
+    CHECK_EQ((int)b.firedChannelMask(), (1 << 3) | (1 << 5));
+    CHECK_EQ((int)b.lastFiredChannel(), 5);
+}
+
+void test_fired_mask_clears_on_new_arm_session() {
+    FakeChannelDriver drv;
+    BoxController b = armedBox(drv, 0);
+    b.onCommand(cmd(MsgType::FIRE, 22, 0, 3, 0), 0);
+    CHECK_EQ((int)b.firedChannelMask(), (1 << 3));
+    b.setPhysicalSwitch(false, 1);                   // switch off -> SAFE
+    b.setPhysicalSwitch(true, 2);                    // switch back on
+    b.onCommand(cmd(MsgType::ARM, 99, 0, 0, 200), 2);// new arm session (new nonce)
+    CHECK_EQ((int)b.firedChannelMask(), 0);          // map cleared for the new session
+    CHECK_EQ((int)b.lastFiredChannel(), 0xFF);
+}
+
 int main() {
     RUN(test_begin_is_safe_and_alloff);
     RUN(test_fire_when_armed_energizes_then_expires);
@@ -217,5 +241,7 @@ int main() {
     RUN(test_result_duplicate_still_no_double_fire);
     RUN(test_idle_safe_tick_does_not_spam_alloff);
     RUN(test_not_armed_with_live_channel_still_deenergizes_on_tick);
+    RUN(test_fired_mask_sets_on_fire);
+    RUN(test_fired_mask_clears_on_new_arm_session);
     return REPORT();
 }

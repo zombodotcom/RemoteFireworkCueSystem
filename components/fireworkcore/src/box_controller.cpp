@@ -13,6 +13,8 @@ void BoxController::deenergizeAll() {
 }
 
 void BoxController::begin() {
+    firedEver_ = 0;
+    lastFired_ = 0xFF;
     deenergizeAll();          // outputs off before anything else (boot-safe)
 }
 
@@ -21,6 +23,8 @@ void BoxController::energize(uint8_t ch, uint32_t nowMs) {
     drv_.setChannel(ch, true);
     firing_[ch] = true;
     offAtMs_[ch] = nowMs + cfg_.fireMs;
+    firedEver_ |= (uint16_t)(1u << ch);
+    lastFired_ = ch;
 }
 
 void BoxController::setPhysicalSwitch(bool on, uint32_t nowMs) {
@@ -36,7 +40,14 @@ void BoxController::setPhysicalSwitch(bool on, uint32_t nowMs) {
 CommandResult BoxController::onCommand(const CommandPacket& pkt, uint32_t nowMs) {
     if (!crcValid(pkt)) return CommandResult::IGNORED;   // corrupt packet ignored
     switch ((MsgType)pkt.type) {
-        case MsgType::ARM:       arm_.arm(pkt.nonce, nowMs); return CommandResult::IGNORED;
+        case MsgType::ARM: {
+            bool wasArmed = arm_.state() == BoxState::ARMED;
+            if (arm_.arm(pkt.nonce, nowMs) && !wasArmed) {
+                firedEver_ = 0;
+                lastFired_ = 0xFF;
+            }
+            return CommandResult::IGNORED;
+        }
         case MsgType::DISARM:    arm_.disarm(nowMs); return CommandResult::IGNORED;
         case MsgType::HEARTBEAT: arm_.heartbeat(nowMs); return CommandResult::IGNORED;
         case MsgType::ESTOP:     arm_.estop(nowMs); deenergizeAll(); return CommandResult::IGNORED;

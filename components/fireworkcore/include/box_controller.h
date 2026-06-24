@@ -29,6 +29,8 @@ public:
     void tick(uint32_t nowMs);
     BoxState state() const { return arm_.state(); }
     bool canFire(uint32_t nowMs) const { return arm_.canFire(nowMs); }
+    uint16_t firedChannelMask() const { return firedEver_; }
+    uint8_t  lastFiredChannel() const { return lastFired_; }
 
 private:
     void energize(uint8_t ch, uint32_t nowMs);
@@ -40,6 +42,8 @@ private:
     RecentIds<32> seen_;
     bool     firing_[MAX_CHANNELS];
     uint32_t offAtMs_[MAX_CHANNELS];
+    uint16_t firedEver_ = 0;
+    uint8_t  lastFired_ = 0xFF;
 };
 
 } // namespace fw
