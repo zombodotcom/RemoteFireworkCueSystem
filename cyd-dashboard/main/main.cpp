@@ -3,10 +3,10 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "wifi_sta.h"
-#include "status_model.h"
-#include "status_client.h"
 #include "display.h"
-#include "esp_lvgl_port.h"
+#include "dashboard.h"
+#include "status_client.h"
+#include "status_model.h"
 
 extern "C" void app_main(void) {
     esp_err_t e = nvs_flash_init();
@@ -14,18 +14,18 @@ extern "C" void app_main(void) {
         ESP_ERROR_CHECK(nvs_flash_erase());
         ESP_ERROR_CHECK(nvs_flash_init());
     }
-    wifi_sta_start();
+
     display_init();
-    if (lvgl_port_lock(0)) {
-        lv_obj_t* lbl = lv_label_create(lv_screen_active());
-        lv_obj_set_style_text_font(lbl, &lv_font_montserrat_28, 0);
-        lv_label_set_text(lbl, "CYD OK");
-        lv_obj_center(lbl);
-        lvgl_port_unlock();
-    }
-    static StatusModel model;
+    dashboard_create();
+    wifi_sta_start();
+
+    static StatusModel model;       // controllerReachable defaults false
+    dashboard_update(model);        // shows "NO CONTROLLER" until first good poll
+
     while (true) {
         if (wifi_sta_connected()) status_client_poll_once(model);
+        else                      model.controllerReachable = false;
+        dashboard_update(model);
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
