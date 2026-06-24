@@ -19,10 +19,19 @@ const HEARTBEAT_INTERVAL_MS = 1000;
 const STATUS_POLL_INTERVAL_MS = 400;
 
 // Minimal subset of what /api/status returns (matches handle_status in web_server.cpp).
+interface BoxStatus {
+  id: number;
+  linkAlive: boolean;
+  rssi: number;
+  state: number;        // 0 = SAFE, 1 = ARMED
+  firedBitmap: number;
+  lastFired: number;    // -1 = none
+}
 interface StatusResponse {
   armed: boolean;
   seqRunning: boolean;
   lastFailedBox: number | null;
+  boxes?: BoxStatus[];
 }
 
 export class LiveConnection implements SystemConnection {
@@ -132,33 +141,42 @@ export class LiveConnection implements SystemConnection {
   /**
    * Map the controller's flat status JSON into the Snapshot/BoxView shape the UI reads.
    *
-   * The live controller does not report per-box or per-channel state beyond global
-   * armed + seqRunning, so we synthesise a single "box 0" placeholder that mirrors
-   * the global state. The channel grid stays at not-firing (hardware fires physically;
-   * the browser has no feedback channel for that).
+   * When boxes[] is present (Task 5+), each box's real telemetry is used.
+   * Falls back to a synthesised box 0 for backwards-compat with older firmware.
    *
    * Field mapping (from handle_status in web_server.cpp):
-   *   armed         → boxes[0].armed
-   *   seqRunning    → snapshot.seqRunning
-   *   lastFailedBox → ignored (no BoxView field for it)
+   *   boxes[].state       → armed (0=SAFE, 1=ARMED)
+   *   boxes[].firedBitmap → per-channel fired flag
+   *   boxes[].linkAlive   → link badge
+   *   boxes[].rssi        → RSSI dBm (only shown when linkAlive)
+   *   seqRunning          → snapshot.seqRunning
+   *   lastFailedBox       → ignored (no BoxView field for it)
    */
   private applyStatus(s: StatusResponse): void {
     const CHANNELS = 16;
-    const channels = Array.from({ length: CHANNELS }, () => ({ firing: false, msLeft: 0 }));
+    const src = s.boxes && s.boxes.length
+      ? s.boxes
+      : [{ id: 0, linkAlive: false, rssi: 0, state: s.armed ? 1 : 0, firedBitmap: 0, lastFired: -1 }];
 
-    snapshot.set({
-      now: Date.now(),
-      seqRunning: s.seqRunning,
-      boxes: [
-        {
-          id: 0,
-          switchOn: s.armed,   // proxy: if armed, switch is logically on
-          armed: s.armed,
-          estopped: false,     // no API field; estop is only observable on hardware
-          canFire: s.armed && !s.seqRunning,
-          channels,
-        },
-      ],
+    const boxes = src.map((b) => {
+      const channels = Array.from({ length: CHANNELS }, (_unused, c) => ({
+        firing: false,                                   // hardware fires physically; no live "on" feedback
+        msLeft: 0,
+        fired: (b.firedBitmap & (1 << c)) !== 0,
+      }));
+      const armed = b.state === 1;
+      return {
+        id: b.id,
+        switchOn: armed,            // proxy: armed implies the physical switch is on
+        armed,
+        estopped: false,            // no API field; estop only observable on hardware
+        canFire: armed && !s.seqRunning,
+        linkAlive: b.linkAlive,
+        rssi: b.linkAlive ? b.rssi : null,
+        channels,
+      };
     });
+
+    snapshot.set({ now: Date.now(), seqRunning: s.seqRunning, boxes });
   }
 }

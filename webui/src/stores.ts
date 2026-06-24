@@ -2,8 +2,8 @@ import { writable } from "svelte/store";
 import { loadConfig, saveConfig, type ShowConfig } from "./lib/config";
 import type { SystemConnection } from "./core/connection";
 
-export interface ChannelView { firing: boolean; msLeft: number; }
-export interface BoxView { id: number; switchOn: boolean; armed: boolean; estopped: boolean; canFire: boolean; channels: ChannelView[]; }
+export interface ChannelView { firing: boolean; msLeft: number; fired: boolean; }
+export interface BoxView { id: number; switchOn: boolean; armed: boolean; estopped: boolean; canFire: boolean; linkAlive: boolean; rssi: number | null; channels: ChannelView[]; }
 export interface Snapshot { now: number; seqRunning: boolean; boxes: BoxView[]; }
 
 export const snapshot = writable<Snapshot>({ now: 0, seqRunning: false, boxes: [] });

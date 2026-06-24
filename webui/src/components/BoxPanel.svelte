@@ -13,6 +13,9 @@
     <span class="lamp" class:armed={box.armed} class:estop={box.estopped}>
       {box.estopped ? "E-STOP" : box.armed ? "ARMED" : "SAFE"}
     </span>
+    <span class="link" class:dead={!box.linkAlive}>
+      {box.linkAlive ? (box.rssi !== null ? `${box.rssi} dBm` : "link") : "no link"}
+    </span>
     <label><input type="checkbox" checked={box.switchOn} on:change={(e) => onSwitch(/** @type {HTMLInputElement} */ (e.target).checked)} /> arm switch</label>
   </header>
   <ChannelGrid {box} {labels} {onFire} />
@@ -24,4 +27,6 @@
   .lamp { padding: 2px 8px; border-radius: 4px; background: #722; color: #fff; }
   .lamp.armed { background: #161; }
   .lamp.estop { background: #b00; }
+  .link { padding: 2px 8px; border-radius: 4px; background: #161; color: #fff; font-size: 0.85em; }
+  .link.dead { background: #555; color: #bbb; }
 </style>

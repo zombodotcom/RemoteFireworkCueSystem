@@ -67,10 +67,11 @@ export class SimConnection implements SystemConnection {
     for (let b = 0; b < 2; b++) {
       const channels = [];
       for (let c = 0; c < CHANNELS; c++)
-        channels.push({ firing: this.rig.channelFiring(b, c), msLeft: this.rig.channelMsLeft(b, c, this.now) });
+        channels.push({ firing: this.rig.channelFiring(b, c), msLeft: this.rig.channelMsLeft(b, c, this.now), fired: this.rig.channelFiring(b, c) });
       boxes.push({
         id: b, switchOn: this.rig.boxSwitch(b), armed: this.rig.boxState(b) === 1,
-        estopped: this.rig.boxEstopped(b), canFire: this.rig.boxCanFire(b, this.now), channels,
+        estopped: this.rig.boxEstopped(b), canFire: this.rig.boxCanFire(b, this.now),
+        linkAlive: this.connected, rssi: null, channels,
       });
     }
     const snap: Snapshot = { now: this.now, seqRunning: this.rig.seqRunning(), boxes };
