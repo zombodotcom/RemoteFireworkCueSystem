@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.16)
+project(controller_host_test CXX)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+enable_testing()
+include_directories(${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../main)
+add_executable(test_event_log test_event_log.cpp ../main/event_log.cpp)
+add_test(NAME test_event_log COMMAND test_event_log)
