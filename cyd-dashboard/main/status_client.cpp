@@ -29,6 +29,7 @@ void status_client_poll_once(StatusModel& model) {
     cfg.event_handler = on_evt;
     cfg.user_data = &acc;
     esp_http_client_handle_t c = esp_http_client_init(&cfg);
+    if (!c) { model.controllerReachable = false; return; }
     esp_err_t err = esp_http_client_perform(c);
     int status = esp_http_client_get_status_code(c);
     esp_http_client_cleanup(c);

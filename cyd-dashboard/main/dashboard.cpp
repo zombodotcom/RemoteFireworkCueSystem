@@ -77,7 +77,7 @@ void dashboard_update(const StatusModel& m) {
     }
 
     char line[48];
-    if (m.controllerReachable && m.boxLinkAlive)
+    if (m.controllerReachable && m.boxPresent && m.boxLinkAlive)
         std::snprintf(line, sizeof(line), "Box0  LINK OK  %d dBm", m.rssi);
     else
         std::snprintf(line, sizeof(line), "Box0  LINK DOWN");

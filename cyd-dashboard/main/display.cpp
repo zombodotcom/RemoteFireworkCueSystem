@@ -13,8 +13,8 @@
 #define PIN_DC    2
 #define PIN_RST  -1
 #define PIN_BL   21
-#define LCD_H 240   // native portrait width
-#define LCD_V 320   // native portrait height
+#define LCD_H 240   // panel native width  (portrait); LVGL hres uses LCD_V for landscape
+#define LCD_V 320   // panel native height (portrait); LVGL vres uses LCD_H for landscape
 
 lv_display_t* display_init(void) {
     gpio_config_t bk = {};
