@@ -525,12 +525,21 @@ git commit -m "feat(cyd): poll /api/status over HTTP and parse into StatusModel"
 
 **Files:**
 - Create: `cyd-dashboard/main/display.h`, `cyd-dashboard/main/display.cpp`, `cyd-dashboard/sdkconfig.defaults`
-- Modify: `cyd-dashboard/main/CMakeLists.txt` (add `display.cpp`), `cyd-dashboard/main/main.cpp` (call `display_init` + show a label)
+- Modify: `cyd-dashboard/main/idf_component.yml` (add LVGL deps), `cyd-dashboard/main/CMakeLists.txt` (add `display.cpp`), `cyd-dashboard/main/main.cpp` (call `display_init` + show a label)
 
 **Interfaces:**
 - Produces: `lv_display_t* display_init(void);` — brings up SPI + ST7789 + esp_lvgl_port and returns the LVGL display. After it returns, LVGL calls must be wrapped in `lvgl_port_lock(0)` / `lvgl_port_unlock()`.
 
-- [ ] **Step 1: LVGL font config**
+- [ ] **Step 1: Add LVGL dependencies (version-pinned) + font config**
+
+Task 1 omitted LVGL from `idf_component.yml` (unused then) and flagged that `esp_lvgl_port 2.8` (resolved from `^2.4.0`) needs **LVGL ≥ 9.3** for `LV_COLOR_FORMAT_RGB565_SWAPPED` (which is what `flags.swap_bytes` maps to). Set `cyd-dashboard/main/idf_component.yml` to:
+```yaml
+dependencies:
+  idf: ">=5.0"
+  lvgl/lvgl: "~9.3.0"
+  espressif/esp_lvgl_port: "^2.4.0"
+```
+If the build still errors on a missing `swap_bytes` field or an `RGB565_SWAPPED` symbol, that is the known byte-order knob: confirm the resolved `esp_lvgl_port` version's `lvgl_port_display_cfg_t` field name (`flags.swap_bytes` in 2.x) and keep the swap enabled by whatever field that version exposes — the panel REQUIRES the RGB565 byte-swap (proven on the bench). Report the exact versions resolved.
 
 `cyd-dashboard/sdkconfig.defaults`:
 ```
