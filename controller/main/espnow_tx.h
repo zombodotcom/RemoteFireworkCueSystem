@@ -21,10 +21,21 @@ public:
     // Call from control loop only (same task as send/BoxLink).
     bool receiveAck(uint32_t& responseToId);
 
+    struct StatusReport {
+        uint8_t  boxId;
+        uint8_t  state;
+        uint8_t  lastFiredChannel;
+        uint16_t firedBitmap;
+        int8_t   rssi;
+    };
+    // Non-blocking dequeue of one box status report. Control loop only.
+    bool receiveStatus(StatusReport& out);
+
 private:
     // Static trampoline: C callback can't capture `this`.
     static EspNowTransport* g_self;
     static void rxCallback(const esp_now_recv_info_t* info, const uint8_t* data, int len);
 
     QueueHandle_t ackQueue_ = nullptr;
+    QueueHandle_t statusQueue_ = nullptr;
 };

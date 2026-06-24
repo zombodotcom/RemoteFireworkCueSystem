@@ -18,6 +18,8 @@ esp_err_t EspNowTransport::begin() {
     // Create the ACK queue before registering the RX callback.
     ackQueue_ = xQueueCreate(16, sizeof(uint32_t));
     if (!ackQueue_) { ESP_LOGE(TAG, "xQueueCreate failed"); return ESP_ERR_NO_MEM; }
+    statusQueue_ = xQueueCreate(8, sizeof(StatusReport));
+    if (!statusQueue_) { ESP_LOGE(TAG, "status xQueueCreate failed"); return ESP_ERR_NO_MEM; }
 
     // --- WiFi SoftAP init (must precede esp_now_init) ---
     ESP_ERROR_CHECK(esp_netif_init());
@@ -85,18 +87,41 @@ bool EspNowTransport::receiveAck(uint32_t& responseToId) {
     return xQueueReceive(ackQueue_, &responseToId, 0) == pdTRUE;
 }
 
+bool EspNowTransport::receiveStatus(StatusReport& out) {
+    if (!statusQueue_) return false;
+    return xQueueReceive(statusQueue_, &out, 0) == pdTRUE;
+}
+
 // Static RX callback — runs in WiFi task, not the control-loop task.
-// Must NOT touch BoxLink. Queue the responseToId only.
-void EspNowTransport::rxCallback(const esp_now_recv_info_t* /*info*/,
+// Must NOT touch BoxLink. Validate + memcpy + queue only.
+void EspNowTransport::rxCallback(const esp_now_recv_info_t* info,
                                   const uint8_t* data, int len) {
-    if (!g_self || !g_self->ackQueue_) return;
-    if (len < static_cast<int>(sizeof(fw::AckPacket))) return;
+    if (!g_self || len < 1) return;
+    uint8_t type = data[0];
 
-    fw::AckPacket ack;
-    memcpy(&ack, data, sizeof(ack));
-    if (ack.type != static_cast<uint8_t>(fw::MsgType::ACK)) return;
-    if (!fw::crcValid(ack)) { ESP_LOGW(TAG, "ACK CRC mismatch - dropped"); return; }
+    if (type == static_cast<uint8_t>(fw::MsgType::ACK)) {
+        if (!g_self->ackQueue_) return;
+        if (len < static_cast<int>(sizeof(fw::AckPacket))) return;
+        fw::AckPacket ack;
+        memcpy(&ack, data, sizeof(ack));
+        if (!fw::crcValid(ack)) { ESP_LOGW(TAG, "ACK CRC mismatch - dropped"); return; }
+        xQueueSend(g_self->ackQueue_, &ack.responseToId, 0);
+        return;
+    }
 
-    // Post just the 4-byte id; control loop feeds it to BoxLink::onAck.
-    xQueueSend(g_self->ackQueue_, &ack.responseToId, 0);
+    if (type == static_cast<uint8_t>(fw::MsgType::STATUS)) {
+        if (!g_self->statusQueue_) return;
+        if (len < static_cast<int>(sizeof(fw::StatusPacket))) return;
+        fw::StatusPacket st;
+        memcpy(&st, data, sizeof(st));
+        if (!fw::crcValid(st)) { ESP_LOGW(TAG, "STATUS CRC mismatch - dropped"); return; }
+        StatusReport r{};
+        r.boxId            = st.boxId;
+        r.state            = st.state;
+        r.lastFiredChannel = st.lastFiredChannel;
+        r.firedBitmap      = st.firedBitmap;
+        r.rssi             = (info && info->rx_ctrl) ? (int8_t)info->rx_ctrl->rssi : 0;
+        xQueueSend(g_self->statusQueue_, &r, 0);
+        return;
+    }
 }
