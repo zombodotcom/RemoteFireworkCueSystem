@@ -41,10 +41,23 @@ static lv_obj_t* s_cellNum[16] = {nullptr};
 // task) — the port mutex serializes the two, so plain statics are safe.
 enum PulseMode { PULSE_NONE, PULSE_ARMED, PULSE_ALARM };
 static volatile PulseMode g_pulse = PULSE_NONE;
-static uint16_t g_fired = 0;          // last-seen fired bitmap
-static int      g_flash[16] = {0};    // per-cell "just fired" flash ticks
+static uint16_t g_fired_bits = 0;        // last-seen fired bitmap
+static int      g_flash[16] = {0};       // per-cell "just fired" flash ticks
 static uint32_t g_tick = 0;
-static const int FLASH_TICKS = 6;     // ~0.7s of white flash (timer @ 120ms)
+static const int FLASH_TICKS = 6;        // ~0.7s of white flash (timer @ 120ms)
+
+// Paging structure.
+static lv_obj_t* s_pageDash = nullptr;   // container for the existing dashboard widgets
+static lv_obj_t* s_pageLog  = nullptr;
+static lv_obj_t* s_pageDiag = nullptr;
+static lv_obj_t* s_dots[3]  = {nullptr};
+static int s_page = 0;                    // 0=dash,1=log,2=diag
+static lv_obj_t* s_logRows[8] = {nullptr};
+static lv_obj_t* s_diagText = nullptr;
+static lv_obj_t* s_stateBarLog = nullptr; // slim state bar atop log/diag
+static lv_obj_t* s_stateBarDiag = nullptr;
+static lv_obj_t* s_lastEvtLine = nullptr; // latest-event line on the dashboard
+static bool s_faultUnseen = false;
 
 static int popcount16(uint16_t v) {
     int n = 0;
@@ -94,6 +107,19 @@ static void pulse_timer_cb(lv_timer_t* /*t*/) {
     }
 }
 
+static void show_page(int p) {
+    s_page = (p % 3 + 3) % 3;
+    lv_obj_add_flag(s_pageDash, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_pageLog,  LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_pageDiag, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_t* cur = s_page == 0 ? s_pageDash : s_page == 1 ? s_pageLog : s_pageDiag;
+    lv_obj_remove_flag(cur, LV_OBJ_FLAG_HIDDEN);
+    for (int i = 0; i < 3; ++i)
+        lv_obj_set_style_bg_color(s_dots[i], i == s_page ? lv_color_white() : C_CELLOFF_BD, 0);
+    if (s_page == 1) s_faultUnseen = false;   // viewing the log clears the unseen-fault marker
+}
+static void screen_tap_cb(lv_event_t* /*e*/) { show_page(s_page + 1); }
+
 void dashboard_create(void) {
     if (!lvgl_port_lock(0)) return;
     lv_obj_t* scr = lv_screen_active();
@@ -101,8 +127,26 @@ void dashboard_create(void) {
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
     lv_obj_remove_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
 
+    auto mkPage = [&](void) {
+        lv_obj_t* pg = lv_obj_create(scr);
+        lv_obj_set_size(pg, 320, 240);
+        lv_obj_set_pos(pg, 0, 0);
+        lv_obj_remove_flag(pg, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_style_bg_color(pg, C_BG, 0);
+        lv_obj_set_style_bg_opa(pg, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(pg, 0, 0);
+        lv_obj_set_style_pad_all(pg, 0, 0);
+        return pg;
+    };
+    s_pageDash = mkPage();
+    s_pageLog  = mkPage();
+    s_pageDiag = mkPage();
+
+    // ----- Dashboard page (existing widgets, parented to s_pageDash) -----
+    lv_obj_t* parent = s_pageDash;
+
     // --- header: heartbeat dot + title (left), link (right) ---
-    s_dot = lv_obj_create(scr);
+    s_dot = lv_obj_create(parent);
     lv_obj_set_size(s_dot, 10, 10);
     lv_obj_align(s_dot, LV_ALIGN_TOP_LEFT, 10, 11);
     lv_obj_remove_flag(s_dot, LV_OBJ_FLAG_SCROLLABLE);
@@ -110,20 +154,20 @@ void dashboard_create(void) {
     lv_obj_set_style_border_width(s_dot, 0, 0);
     lv_obj_set_style_bg_color(s_dot, C_LINKOK, 0);
 
-    lv_obj_t* title = lv_label_create(scr);
+    lv_obj_t* title = lv_label_create(parent);
     lv_obj_set_style_text_font(title, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(title, C_MUTED, 0);
     lv_label_set_text(title, "FIRE BOX 0");
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, 28, 8);
 
-    s_link = lv_label_create(scr);
+    s_link = lv_label_create(parent);
     lv_obj_set_style_text_font(s_link, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(s_link, C_MUTED, 0);
     lv_label_set_text(s_link, LV_SYMBOL_WIFI "  --");
     lv_obj_align(s_link, LV_ALIGN_TOP_RIGHT, -12, 8);
 
     // --- hero state card (gradient + colored glow) ---
-    s_card = lv_obj_create(scr);
+    s_card = lv_obj_create(parent);
     lv_obj_set_size(s_card, 300, 74);
     lv_obj_align(s_card, LV_ALIGN_TOP_MID, 0, 28);
     lv_obj_remove_flag(s_card, LV_OBJ_FLAG_SCROLLABLE);
@@ -140,26 +184,26 @@ void dashboard_create(void) {
     lv_obj_center(s_state);
 
     // --- stats row: FIRED (left) · LAST (center) · SEQ (right) ---
-    s_fired = lv_label_create(scr);
+    s_fired = lv_label_create(parent);
     lv_obj_set_style_text_font(s_fired, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(s_fired, lv_color_white(), 0);
     lv_label_set_text(s_fired, "FIRED  0/16");
     lv_obj_align(s_fired, LV_ALIGN_TOP_LEFT, 12, 108);
 
-    s_last = lv_label_create(scr);
+    s_last = lv_label_create(parent);
     lv_obj_set_style_text_font(s_last, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(s_last, C_MUTED, 0);
     lv_label_set_text(s_last, "LAST --");
     lv_obj_align(s_last, LV_ALIGN_TOP_MID, 0, 108);
 
-    s_seq = lv_label_create(scr);
+    s_seq = lv_label_create(parent);
     lv_obj_set_style_text_font(s_seq, &lv_font_montserrat_14, 0);
     lv_obj_set_style_text_color(s_seq, C_MUTED, 0);
     lv_label_set_text(s_seq, "IDLE");
     lv_obj_align(s_seq, LV_ALIGN_TOP_RIGHT, -12, 108);
 
     // --- fired progress bar ---
-    s_bar = lv_bar_create(scr);
+    s_bar = lv_bar_create(parent);
     lv_obj_set_size(s_bar, 296, 8);
     lv_obj_align(s_bar, LV_ALIGN_TOP_MID, 0, 130);
     lv_obj_set_style_radius(s_bar, 4, 0);
@@ -172,7 +216,7 @@ void dashboard_create(void) {
     // --- fired grid: 2 rows x 8 numbered cells ---
     for (int i = 0; i < 16; ++i) {
         int col = i % 8, row = i / 8;
-        lv_obj_t* c = lv_obj_create(scr);
+        lv_obj_t* c = lv_obj_create(parent);
         lv_obj_set_size(c, 33, 32);
         lv_obj_align(c, LV_ALIGN_TOP_LEFT, 10 + col * 37, 150 + row * 42);
         lv_obj_remove_flag(c, LV_OBJ_FLAG_SCROLLABLE);
@@ -193,7 +237,63 @@ void dashboard_create(void) {
         s_cellNum[i] = n;
     }
 
-    lv_timer_create(pulse_timer_cb, 120, nullptr);  // glow + flash animation
+    // --- latest-event line ---
+    s_lastEvtLine = lv_label_create(parent);
+    lv_obj_set_style_text_font(s_lastEvtLine, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(s_lastEvtLine, C_MUTED, 0);
+    lv_label_set_long_mode(s_lastEvtLine, LV_LABEL_LONG_DOT);
+    lv_obj_set_width(s_lastEvtLine, 300);
+    lv_label_set_text(s_lastEvtLine, "");
+    lv_obj_align(s_lastEvtLine, LV_ALIGN_BOTTOM_LEFT, 10, -6);
+
+    // ----- Log page -----
+    s_stateBarLog = lv_label_create(s_pageLog);
+    lv_obj_set_style_text_font(s_stateBarLog, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(s_stateBarLog, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(s_stateBarLog, LV_OPA_COVER, 0);
+    lv_obj_set_width(s_stateBarLog, 320);
+    lv_obj_set_style_pad_all(s_stateBarLog, 4, 0);
+    lv_obj_align(s_stateBarLog, LV_ALIGN_TOP_MID, 0, 0);
+    lv_label_set_text(s_stateBarLog, "EVENTS");
+    for (int i = 0; i < 8; ++i) {
+        s_logRows[i] = lv_label_create(s_pageLog);
+        lv_obj_set_style_text_font(s_logRows[i], &lv_font_montserrat_14, 0);
+        lv_obj_set_style_text_color(s_logRows[i], C_MUTED, 0);
+        lv_label_set_long_mode(s_logRows[i], LV_LABEL_LONG_DOT);
+        lv_obj_set_width(s_logRows[i], 308);
+        lv_label_set_text(s_logRows[i], "");
+        lv_obj_align(s_logRows[i], LV_ALIGN_TOP_LEFT, 6, 30 + i * 25);
+    }
+
+    // ----- Diag page -----
+    s_stateBarDiag = lv_label_create(s_pageDiag);
+    lv_obj_set_style_text_font(s_stateBarDiag, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(s_stateBarDiag, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(s_stateBarDiag, LV_OPA_COVER, 0);
+    lv_obj_set_width(s_stateBarDiag, 320);
+    lv_obj_set_style_pad_all(s_stateBarDiag, 4, 0);
+    lv_obj_align(s_stateBarDiag, LV_ALIGN_TOP_MID, 0, 0);
+    lv_label_set_text(s_stateBarDiag, "DIAGNOSTICS");
+    s_diagText = lv_label_create(s_pageDiag);
+    lv_obj_set_style_text_font(s_diagText, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(s_diagText, lv_color_white(), 0);
+    lv_obj_align(s_diagText, LV_ALIGN_TOP_LEFT, 10, 34);
+    lv_label_set_text(s_diagText, "");
+
+    // ----- Page dots (on scr, bottom-center) -----
+    for (int i = 0; i < 3; ++i) {
+        s_dots[i] = lv_obj_create(scr);
+        lv_obj_set_size(s_dots[i], 8, 8);
+        lv_obj_remove_flag(s_dots[i], LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_style_radius(s_dots[i], 4, 0);
+        lv_obj_set_style_border_width(s_dots[i], 0, 0);
+        lv_obj_set_style_bg_color(s_dots[i], C_CELLOFF_BD, 0);
+        lv_obj_align(s_dots[i], LV_ALIGN_BOTTOM_MID, (i - 1) * 14, -2);
+    }
+
+    lv_obj_add_event_cb(scr, screen_tap_cb, LV_EVENT_CLICKED, nullptr);
+    show_page(0);
+    lv_timer_create(pulse_timer_cb, 120, nullptr);
     lvgl_port_unlock();
 }
 
@@ -253,13 +353,55 @@ void dashboard_update(const StatusModel& m) {
     }
 
     // --- fired grid: settle each cell, and flash the newly-fired ones ---
-    uint16_t newBits = (uint16_t)(m.firedBitmap & ~g_fired);
+    uint16_t newBits = (uint16_t)(m.firedBitmap & ~g_fired_bits);
     for (int i = 0; i < 16; ++i) {
-        bool fired = (m.firedBitmap >> i) & 0x1;
-        render_cell_settled(i, fired);
+        bool isFired = (m.firedBitmap >> i) & 0x1;
+        render_cell_settled(i, isFired);
         if ((newBits >> i) & 0x1) g_flash[i] = FLASH_TICKS;  // just fired -> flash
     }
-    g_fired = m.firedBitmap;
+    g_fired_bits = m.firedBitmap;
 
+    // --- mirror state onto the Log/Diag slim bars ---
+    lv_label_set_text(s_stateBarLog, word);
+    lv_label_set_text(s_stateBarDiag, word);
+    lv_obj_set_style_bg_color(s_stateBarLog, top, 0);
+    lv_obj_set_style_bg_color(s_stateBarDiag, top, 0);
+
+    // --- diag text ---
+    char dt[256];
+    std::snprintf(dt, sizeof(dt),
+        "uptime  %lus\nheap    %luk\nclients %lu\nack     %lums\n"
+        "fired   %lu\nacked   %lu\nfailed  %lu\nretries %lu\nbox heard %lums ago",
+        (unsigned long)(m.diag.uptimeMs/1000), (unsigned long)(m.diag.freeHeap/1024),
+        (unsigned long)m.diag.apClients, (unsigned long)m.diag.lastAckMs,
+        (unsigned long)m.diag.fired, (unsigned long)m.diag.acked,
+        (unsigned long)m.diag.failed, (unsigned long)m.diag.retries,
+        (unsigned long)m.boxLastHeardMs);
+    lv_label_set_text(s_diagText, dt);
+
+    // --- fault badge on the Log dot ---
+    if (m.faultActive) s_faultUnseen = (s_page != 1);
+    lv_obj_set_style_bg_color(s_dots[1],
+        s_faultUnseen ? C_ARMED : (s_page == 1 ? lv_color_white() : C_CELLOFF_BD), 0);
+
+    lvgl_port_unlock();
+}
+
+void dashboard_set_events(const LogEv* evs, int n) {
+    if (!lvgl_port_lock(0)) return;
+    // newest 8, newest at the bottom row
+    int show = n < 8 ? n : 8;
+    int start = n - show;
+    for (int i = 0; i < 8; ++i) {
+        if (i < show) {
+            const LogEv& e = evs[start + i];
+            lv_color_t c = e.sev == 2 ? C_ARMED : e.sev == 1 ? C_AMBER : C_MUTED;
+            lv_obj_set_style_text_color(s_logRows[i], c, 0);
+            lv_label_set_text(s_logRows[i], e.msg);
+        } else {
+            lv_label_set_text(s_logRows[i], "");
+        }
+    }
+    if (n > 0) lv_label_set_text(s_lastEvtLine, evs[n - 1].msg);  // latest-event line on the dashboard
     lvgl_port_unlock();
 }
