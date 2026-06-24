@@ -57,5 +57,6 @@ bool parseStatus(const char* json, StatusModel& out) {
     if (intAt(valueAfter(obj, "rssi"), iv))        out.rssi = iv;
     if (intAt(valueAfter(obj, "state"), iv))       out.boxArmed = (iv == 1);
     if (intAt(valueAfter(obj, "firedBitmap"), iv)) out.firedBitmap = (uint16_t)iv;
+    if (intAt(valueAfter(obj, "lastFired"), iv))   out.lastFired = iv;
     return true;
 }

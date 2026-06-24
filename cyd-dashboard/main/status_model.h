@@ -7,6 +7,7 @@ struct StatusModel {
     bool     boxLinkAlive        = false; // boxes[0].linkAlive
     int      rssi                = 0;      // boxes[0].rssi (dBm)
     uint16_t firedBitmap         = 0;      // boxes[0].firedBitmap
+    int      lastFired           = -1;     // boxes[0].lastFired (-1 = none)
     bool     seqRunning          = false;  // top-level seqRunning
     uint32_t lastUpdateMs        = 0;      // set by client
 };

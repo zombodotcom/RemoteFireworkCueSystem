@@ -22,6 +22,7 @@ void test_parse_armed_box() {
     CHECK(m.boxLinkAlive);
     CHECK_EQ(m.rssi, -52);
     CHECK_EQ((int)m.firedBitmap, 5);
+    CHECK_EQ(m.lastFired, 2);
     CHECK(!m.seqRunning);
 }
 void test_parse_safe_nolink_seq() {
@@ -31,6 +32,7 @@ void test_parse_safe_nolink_seq() {
     CHECK(!m.boxArmed);          // state == 0
     CHECK(!m.boxLinkAlive);
     CHECK_EQ(m.rssi, 0);
+    CHECK_EQ(m.lastFired, -1);
     CHECK(m.seqRunning);
 }
 void test_parse_empty_boxes() {
