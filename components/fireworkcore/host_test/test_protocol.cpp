@@ -36,10 +36,21 @@ void test_ack_crc_roundtrip_and_tamper() {
     CHECK(!fw::crcValid(a));
 }
 
+void test_status_crc_roundtrip_and_tamper() {
+    fw::StatusPacket s{};
+    s.type = (uint8_t)fw::MsgType::STATUS;
+    s.boxId = 0; s.state = 1; s.firedBitmap = 0b00000101; s.lastFiredChannel = 2; s.timestamp = 10;
+    s.crc = fw::computeCrc(s);
+    CHECK(fw::crcValid(s));
+    s.firedBitmap = 0b00000111;     // tamper after CRC
+    CHECK(!fw::crcValid(s));
+}
+
 int main() {
     RUN(test_command_crc_roundtrip);
     RUN(test_command_crc_detects_tamper);
     RUN(test_channel_in_range);
     RUN(test_ack_crc_roundtrip_and_tamper);
+    RUN(test_status_crc_roundtrip_and_tamper);
     return REPORT();
 }
