@@ -16,6 +16,6 @@
 <style>
   .grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; }
   .cell { aspect-ratio: 1; border: 1px solid #444; background: #222; color: #888; cursor: pointer; }
-  .cell.firing { background: gold; color: #000; box-shadow: 0 0 10px gold; }
   .cell.fired { background: #432; color: #fb8; border-color: #a63; }
+  .cell.firing { background: gold; color: #000; box-shadow: 0 0 10px gold; }
 </style>

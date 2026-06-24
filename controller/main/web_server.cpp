@@ -17,6 +17,7 @@
  */
 
 #include "web_server.h"
+#include "controller_config.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include <stdio.h>
@@ -230,18 +231,25 @@ static esp_err_t handle_status(httpd_req_t* req) {
         "{\"armed\":%s,\"seqRunning\":%s,\"lastFailedBox\":%s,\"boxes\":[",
         armed ? "true" : "false", seq ? "true" : "false", lastBoxTok);
 
+    bool firstBox = true;
     for (int b = 0; b < 2; b++) {
+        // Skip boxes with an all-zero (unconfigured) MAC — they never report.
+        bool configured = false;
+        for (int i = 0; i < 6; i++) { if (ctrl::BOX_MAC[b][i]) { configured = true; break; } }
+        if (!configured) continue;
+
         BoxTelemetry box = g_status.boxes[b];   // snapshot volatile fields once
         size_t rem = (n < (int)sizeof(buf)) ? sizeof(buf) - (size_t)n : 0;
         n += snprintf(buf + n, rem,
             "%s{\"id\":%d,\"linkAlive\":%s,\"rssi\":%d,\"state\":%u,"
             "\"firedBitmap\":%u,\"lastFired\":%d}",
-            b ? "," : "", b,
+            firstBox ? "" : ",", b,
             box.linkAlive ? "true" : "false",
             (int)box.rssi,
             (unsigned)box.state,
             (unsigned)box.firedBitmap,
             (box.lastFiredChannel == 0xFF) ? -1 : (int)box.lastFiredChannel);
+        firstBox = false;
     }
     size_t rem2 = (n < (int)sizeof(buf)) ? sizeof(buf) - (size_t)n : 0;
     n += snprintf(buf + n, rem2, "]}");
