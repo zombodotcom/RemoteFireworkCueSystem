@@ -74,8 +74,10 @@ Three independent locks: **phone proposes, controller decides, box verifies.** D
 idf.py build
 idf.py -p COMxx flash monitor
 ```
-- **Box / controller dev boards (CP210x):** need the **BOOT-hold dance** — hold BOOT, tap EN/RST, release,
-  then flash `--before no-reset`. (A 1 µF EN→GND cap mod, or OTA, would remove this — see NEXT-STEPS.)
+- **Box / controller dev boards (CP210x):** flash **hands-free** by setting the custom reset env first:
+  `$env:ESPTOOL_CUSTOM_RESET_SEQUENCE="D0|R1|W0.6|D1|R0|W0.4|D0"`, then `--before default-reset`. Only fall
+  back to the BOOT-hold dance + `--before no-reset` if you hit a `0x13` boot-mode error. (esptool here is
+  v5.3 — hyphen syntax.)
 - **CYD (CH340) on COM12:** auto-resets, flash with plain `--before default-reset`.
 
 **Host core tests** (Git Bash — CMake auto-picks a stray MSVC otherwise):
@@ -90,9 +92,15 @@ cd webui && npm run build
 gzip -9 -c dist/index.html > ../controller/main/www/index.html.gz
 # then rebuild the controller
 ```
+> `npm run build` needs the WASM sim built first (`bash webui/scripts/build-wasm.sh`, requires emsdk) —
+> otherwise it fails on `fireworkcore.js`.
 
 **Secrets:** AP credentials live ONLY in git-ignored `*/main/secrets.h` (controller + cyd-dashboard).
 SSID `FireControl`. Never commit them.
+
+**Pairing:** per-board ESP-NOW MACs live in git-ignored `*/main/pairing.h` (same pattern as secrets;
+committed defaults fall back via `__has_include`). Regenerate for a new board set with
+`pwsh scripts/gen-pairing.ps1 -ControllerPort COMx -Box0Port COMy`.
 
 ---
 
