@@ -231,18 +231,20 @@ static esp_err_t handle_status(httpd_req_t* req) {
         armed ? "true" : "false", seq ? "true" : "false", lastBoxTok);
 
     for (int b = 0; b < 2; b++) {
-        n += snprintf(buf + n, sizeof(buf) - n,
+        BoxTelemetry box = g_status.boxes[b];   // snapshot volatile fields once
+        size_t rem = (n < (int)sizeof(buf)) ? sizeof(buf) - (size_t)n : 0;
+        n += snprintf(buf + n, rem,
             "%s{\"id\":%d,\"linkAlive\":%s,\"rssi\":%d,\"state\":%u,"
             "\"firedBitmap\":%u,\"lastFired\":%d}",
             b ? "," : "", b,
-            g_status.boxes[b].linkAlive ? "true" : "false",
-            (int)g_status.boxes[b].rssi,
-            (unsigned)g_status.boxes[b].state,
-            (unsigned)g_status.boxes[b].firedBitmap,
-            (g_status.boxes[b].lastFiredChannel == 0xFF)
-                ? -1 : (int)g_status.boxes[b].lastFiredChannel);
+            box.linkAlive ? "true" : "false",
+            (int)box.rssi,
+            (unsigned)box.state,
+            (unsigned)box.firedBitmap,
+            (box.lastFiredChannel == 0xFF) ? -1 : (int)box.lastFiredChannel);
     }
-    n += snprintf(buf + n, sizeof(buf) - n, "]}");
+    size_t rem2 = (n < (int)sizeof(buf)) ? sizeof(buf) - (size_t)n : 0;
+    n += snprintf(buf + n, rem2, "]}");
 
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_send(req, buf, HTTPD_RESP_USE_STRLEN);
