@@ -5,6 +5,7 @@
 #include "esp_log.h"
 #include "esp_wifi.h"
 #include "esp_mac.h"
+#include "esp_heap_caps.h"
 #include "nvs_flash.h"
 #include "controller_config.h"
 #include "config_store.h"
@@ -12,6 +13,7 @@
 #include "box_link.h"
 #include "show_runner.h"
 #include "web_server.h"
+#include <cstdarg>
 
 static const char* TAG = "controller";
 
@@ -20,6 +22,44 @@ fw::SeqStep    g_runSteps[MAX_RUN_STEPS];
 size_t         g_runCount  = 0;
 QueueHandle_t  g_cmdQueue  = nullptr;
 StatusSnapshot g_status    = {};
+ctrl::EventLog    g_events;
+SemaphoreHandle_t g_eventMtx = nullptr;
+
+// Best-effort: format + push under the event mutex. Called from control loop only.
+static void log_evt(uint8_t sev, const char* fmt, ...) {
+    char m[48];
+    va_list ap; va_start(ap, fmt); vsnprintf(m, sizeof(m), fmt, ap); va_end(ap);
+    uint32_t t = (uint32_t)(esp_timer_get_time() / 1000);
+    if (g_eventMtx && xSemaphoreTake(g_eventMtx, pdMS_TO_TICKS(5)) == pdTRUE) {
+        g_events.push(sev, m, t);
+        xSemaphoreGive(g_eventMtx);
+    }
+}
+
+// Sticky fault flags maintained by the loop/observer.
+static bool g_fireFailed = false;
+static bool g_estop      = false;
+
+// Passive BoxLink observer: logs fire lifecycle + bumps diag counters.
+struct CtrlObserver : public fw::BoxLinkObserver {
+    void onFireSent(uint8_t b, uint8_t c, uint32_t id) override {
+        g_status.diag.fired = g_status.diag.fired + 1;
+        log_evt(ctrl::SEV_INFO, "FIRE ch%u -> box%u (id%lu)", c, b, (unsigned long)id);
+    }
+    void onFireAck(uint8_t /*b*/, uint8_t /*c*/, uint32_t id, uint32_t lat) override {
+        g_status.diag.acked = g_status.diag.acked + 1;
+        g_status.diag.lastAckMs = lat; g_fireFailed = false;
+        log_evt(ctrl::SEV_INFO, "ACK id%lu (%lums)", (unsigned long)id, (unsigned long)lat);
+    }
+    void onFireRetry(uint8_t /*b*/, uint8_t c, uint32_t /*id*/, uint8_t a, uint8_t m) override {
+        g_status.diag.retries = g_status.diag.retries + 1;
+        log_evt(ctrl::SEV_WARN, "RETRY ch%u %u/%u", c, a, m);
+    }
+    void onFireFailed(uint8_t /*b*/, uint8_t c, uint32_t /*id*/) override {
+        g_status.diag.failed = g_status.diag.failed + 1; g_fireFailed = true;
+        log_evt(ctrl::SEV_ERR, "FIRE FAILED ch%u (no ACK)", c);
+    }
+};
 
 extern "C" void app_main(void) {
     // NVS init (required by WiFi and ConfigStore).
@@ -55,12 +95,20 @@ extern "C" void app_main(void) {
     g_cmdQueue = xQueueCreate(8, sizeof(UiCommand));
     configASSERT(g_cmdQueue);
 
+    g_eventMtx = xSemaphoreCreateMutex();
+    configASSERT(g_eventMtx);
+    static CtrlObserver obs;
+    link.setObserver(&obs);
+    log_evt(ctrl::SEV_INFO, "controller up, AP %s", ctrl::AP_SSID);
+
     // Start the web server — handlers reach runner via g_cmdQueue / g_status.
     static WebServer web;
     ESP_ERROR_CHECK(web.start(g_cmdQueue, &g_status));
 
     // Control loop: drain cmd queue → drive runner, drain ACKs, tick runner at ~20 ms.
     static uint32_t lastStatusMs[2] = {0, 0};
+    static bool prevSeq = false;
+    static bool prevLink[2] = {false, false};
     while (true) {
         uint32_t now = static_cast<uint32_t>(esp_timer_get_time() / 1000);
 
@@ -69,17 +117,13 @@ extern "C" void app_main(void) {
         while (xQueueReceive(g_cmdQueue, &cmd, 0) == pdTRUE) {
             switch (cmd.type) {
                 case CmdType::ARM:
-                    runner.arm(now);
-                    break;
+                    runner.arm(now); g_estop = false; log_evt(ctrl::SEV_WARN, "ARM -> box0"); break;
                 case CmdType::DISARM:
-                    runner.disarm(now);
-                    break;
+                    runner.disarm(now); log_evt(ctrl::SEV_INFO, "DISARM"); break;
                 case CmdType::ESTOP:
-                    runner.estop(now);
-                    break;
+                    runner.estop(now); g_estop = true; log_evt(ctrl::SEV_ERR, "ESTOP"); break;
                 case CmdType::STOP:
-                    runner.stopSequence(now);
-                    break;
+                    runner.stopSequence(now); log_evt(ctrl::SEV_INFO, "SEQ stop"); break;
                 case CmdType::HEARTBEAT:
                     // Heartbeat is implicit in runner.tick(); no explicit call needed.
                     break;
@@ -90,6 +134,7 @@ extern "C" void app_main(void) {
                     // g_runSteps/g_runCount were written by the handler before enqueue.
                     runner.loadSequence(g_runSteps, g_runCount);
                     runner.startSequence(now);
+                    log_evt(ctrl::SEV_INFO, "SEQ start (%u cues)", (unsigned)g_runCount);
                     break;
             }
         }
@@ -112,16 +157,41 @@ extern "C" void app_main(void) {
             }
         }
         for (int b = 0; b < 2; b++) {
-            g_status.boxes[b].linkAlive =
-                (lastStatusMs[b] != 0) && ((now - lastStatusMs[b]) < 1500);
+            bool alive = (lastStatusMs[b] != 0) && ((now - lastStatusMs[b]) < 1500);
+            if (alive != prevLink[b]) {
+                log_evt(alive ? ctrl::SEV_INFO : ctrl::SEV_ERR,
+                        "box%d link %s", b, alive ? "up" : "lost");
+                prevLink[b] = alive;
+            }
+            g_status.boxes[b].linkAlive  = alive;
+            g_status.boxes[b].lastHeardMs = (lastStatusMs[b] != 0) ? (now - lastStatusMs[b]) : 0xFFFFFFFF;
         }
 
         runner.tick(now);
 
+        bool seqNow = runner.sequenceRunning();
+        if (prevSeq && !seqNow) log_evt(ctrl::SEV_INFO, "SEQ done");
+        prevSeq = seqNow;
+
         // Update status snapshot — written here (control loop), read by status handler.
         g_status.armed         = runner.armed();
-        g_status.seqRunning    = runner.sequenceRunning();
+        g_status.seqRunning    = seqNow;
         g_status.lastFailedBox = 0xFF;  // Not yet exposed by ShowRunner API; 0xFF = none.
+
+        // Diagnostics.
+        g_status.diag.uptimeMs = now;
+        g_status.diag.freeHeap = (uint32_t)esp_get_free_heap_size();
+        wifi_sta_list_t stalist;
+        g_status.diag.apClients = (esp_wifi_ap_get_sta_list(&stalist) == ESP_OK) ? (uint32_t)stalist.num : 0;
+
+        // Fault code: estop > fire-failed > any configured box link down.
+        bool anyLinkDown = false;
+        for (int b = 0; b < 2; b++) {
+            bool configured = false;
+            for (int i = 0; i < 6; i++) if (ctrl::BOX_MAC[b][i]) { configured = true; break; }
+            if (configured && !g_status.boxes[b].linkAlive) anyLinkDown = true;
+        }
+        g_status.faultCode = g_estop ? 1 : (g_fireFailed ? 3 : (anyLinkDown ? 2 : 0));
 
         vTaskDelay(pdMS_TO_TICKS(20));
     }
