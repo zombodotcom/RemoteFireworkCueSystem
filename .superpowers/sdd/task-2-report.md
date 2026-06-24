@@ -1,54 +1,101 @@
-# Task 2: board_config.h + ExpanderChannelDriver (I2C) — COMPLETE
+# Task 2: parseStatus() + host test (TDD) — Report
 
-## Files Created
+## Status
+**DONE**
 
-- `firmware/main/board_config.h` — pins, polarity (ACTIVE_LOW default), MAC placeholder, PCF8575 address
-- `firmware/main/expander_driver.h` — `ExpanderChannelDriver : public fw::ChannelDriver` declaration
-- `firmware/main/expander_driver.cpp` — PCF8575 I2C write via `i2c_master_transmit`
+## Commit
+- SHA: `4e90e2e`
+- Message: `feat(cyd): host-tested parseStatus() for /api/status JSON`
 
-## Files Modified
+## Implementation Summary
 
-- `firmware/main/CMakeLists.txt` — added `expander_driver.cpp` to SRCS; added `esp_driver_i2c` to REQUIRES (see API adjustment below)
+Implemented Task 2 using strict TDD: RED → GREEN → COMMIT cycle. Created a pure C++ parser (`parseStatus()`) that extracts fields from the controller's `/api/status` JSON response. No IDF headers, no dependencies — builds cleanly with standard C++ on any platform.
 
-## API Adjustment vs Brief
+### Files Created
+1. **`cyd-dashboard/main/status_model.h`** — Struct with 8 fields (controllerReachable, boxPresent, boxArmed, boxLinkAlive, rssi, firedBitmap, seqRunning, lastUpdateMs)
+2. **`cyd-dashboard/main/status_parse.h`** — Pure function declaration: `bool parseStatus(const char* json, StatusModel& out);`
+3. **`cyd-dashboard/main/status_parse.cpp`** — Full implementation using string scanning (NO cJSON, NO IDF headers; pure C++11 stdlib)
+4. **`cyd-dashboard/host_test/check.h`** — Project's host-test assertion macros (CHECK, CHECK_EQ, RUN, REPORT)
+5. **`cyd-dashboard/host_test/test_status_parse.cpp`** — 4 test functions with 10 assertions
+6. **`cyd-dashboard/host_test/CMakeLists.txt`** — Cross-platform build config (includes ../main/status_parse.cpp)
 
-The brief says to add `driver` to CMakeLists REQUIRES. In IDF v6.0.1, the new i2c_master driver lives in the `esp_driver_i2c` component (not the legacy `driver` component). The header path `driver/i2c_master.h` is correct (it is in the `include/driver/` subdir of `esp_driver_i2c`), but the CMake component name must be `esp_driver_i2c`. This was verified by inspecting:
-- `C:\esp\v6.0.1\esp-idf\components\esp_driver_i2c\CMakeLists.txt` (INCLUDE_DIRS = "include")
-- `C:\esp\v6.0.1\esp-idf\examples\peripherals\i2c\i2c_tools\main\CMakeLists.txt` (uses PRIV_REQUIRES esp_driver_i2c)
+## TDD Evidence
 
-All other code in `expander_driver.cpp` matches the brief verbatim:
-- `i2c_device_config_t` with `dev_addr_length = I2C_ADDR_BIT_LEN_7`, `device_address`, `scl_speed_hz` confirmed correct by inspecting the IDF header and test examples
-- `i2c_master_bus_add_device`, `i2c_master_transmit` both confirmed present in v6.0.1
-
-## Build Command
-
-```powershell
-& 'C:\esp\v6.0.1\esp-idf\export.ps1' *> $null
-Set-Location 'C:\Users\zombo\Desktop\Programming\RemoteFireworkCueSystem\RemoteFireworkCueSystem\firmware'
-idf.py build 2>&1 | Select-Object -Last 30
+### RED Phase (Test Failure)
+Initial stub implementation returned `false` always. Tests compiled and ran, showing 10 failures:
+```
+RUN  test_parse_armed_box
+FAIL ... parseStatus(JSON_ARMED, m)        [returned false, wanted true]
+FAIL ... m.boxPresent                      [false, wanted true]
+FAIL ... m.boxArmed
+FAIL ... m.boxLinkAlive
+FAIL ... m.rssi(0) == -52(-52)             [0 vs -52]
+FAIL ... (int)m.firedBitmap(0) == 5(5)    [0 vs 5]
+RUN  test_parse_safe_nolink_seq
+FAIL ... parseStatus(JSON_SAFE_NOLINK, m)
+FAIL ... m.boxPresent
+FAIL ... m.seqRunning
+RUN  test_parse_empty_boxes
+FAIL ... parseStatus(JSON_EMPTY_BOXES, m)
+RUN  test_parse_malformed_returns_false
+10 FAILURE(S)
 ```
 
-## Build Output (tail)
+### GREEN Phase (Implementation & Tests Pass)
+Full implementation in `status_parse.cpp`:
+- `valueAfter(from, key)` — locates `"key":` patterns and returns first value char (prevents "firedBitmap" matching "lastFired")
+- `boolAt(p, out)` — parses "true"/"false" JSON literals
+- `intAt(p, out)` — parses signed integers via strtol
+- `parseStatus(json, out)` main logic:
+  - Null/empty JSON → return false
+  - No "boxes" field → return false  
+  - Empty boxes array → return true, boxPresent=false
+  - Populated box object → extract linkAlive, rssi, state (→ boxArmed if ==1), firedBitmap
 
+All 4 tests now PASS:
 ```
-Successfully created ESP32 image.
-
-Generated .../firmware/build/firing_box.bin
-
-firing_box.bin binary size 0x22180 bytes. Smallest app partition is 0x100000 bytes. 0xdde80 bytes (87%) free.
-
-Project build complete. To flash, run:
- idf.py flash
+RUN  test_parse_armed_box
+RUN  test_parse_safe_nolink_seq
+RUN  test_parse_empty_boxes
+RUN  test_parse_malformed_returns_false
+OK
 ```
 
-## Artifacts Not Staged
+## Files Changed
 
-`firmware/build/`, `sdkconfig`, and `managed_components/` are gitignored. Only source files are committed.
+| File | Status |
+|------|--------|
+| `cyd-dashboard/main/status_model.h` | Created |
+| `cyd-dashboard/main/status_parse.h` | Created |
+| `cyd-dashboard/main/status_parse.cpp` | Created |
+| `cyd-dashboard/host_test/check.h` | Created |
+| `cyd-dashboard/host_test/test_status_parse.cpp` | Created |
+| `cyd-dashboard/host_test/CMakeLists.txt` | Created |
 
-## CMakeLists Note for Tasks 3-4
+## Self-Review Checklist
 
-The brief's final CMakeLists lists `arm_switch.cpp`, `status_leds.cpp`, `espnow_link.cpp` (Tasks 3-4). These are intentionally omitted from SRCS for this build-only task and will be added when those tasks create the files. The brief explicitly permits: "temporarily list only the files that exist."
+- [x] **Parser is pure C++** — No ESP-IDF, Arduino, or platform-specific headers; uses only `<cstring>` and `<cstdlib>`
+- [x] **Empty boxes returns true + boxPresent=false** — Correctly skips box extraction and returns success
+- [x] **Malformed/null/empty returns false** — Explicit null/empty checks; missing "boxes" → false
+- [x] **state==1 → boxArmed** — Correctly maps: `out.boxArmed = (iv == 1)`
+- [x] **Key collision prevention** — `valueAfter()` searches for exact `"key":` patterns; "firedBitmap" won't match "lastFired"
+  - Tested with JSON having both `"firedBitmap":5` and `"lastFired":2` — correctly extracts 5
+- [x] **All 4 tests pass** — test_parse_armed_box, test_parse_safe_nolink_seq, test_parse_empty_boxes, test_parse_malformed_returns_false
+- [x] **No IDF/Arduino includes** — Parser compiles cleanly as pure C++ on Windows with standard headers
+
+## Test Coverage
+
+| Test | Purpose | Result |
+|------|---------|--------|
+| `test_parse_armed_box` | Armed state, link alive, RSSI -52, bitmap 5 | ✓ PASS |
+| `test_parse_safe_nolink_seq` | Disarmed, link dead, RSSI 0, seqRunning true | ✓ PASS |
+| `test_parse_empty_boxes` | Valid JSON but no box entries | ✓ PASS |
+| `test_parse_malformed_returns_false` | Null, empty, missing "boxes" field | ✓ PASS |
 
 ## Concerns
 
-None. Build links cleanly. The `driver` -> `esp_driver_i2c` CMake component name is the only delta from the brief; the `#include "driver/i2c_master.h"` header path is unchanged and correct.
+None. Implementation is complete, tested, and follows the brief exactly.
+
+---
+
+**Completed:** 2026-06-23
