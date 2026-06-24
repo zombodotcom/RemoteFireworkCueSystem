@@ -46,11 +46,26 @@ void test_status_crc_roundtrip_and_tamper() {
     CHECK(!fw::crcValid(s));
 }
 
+void test_display_packet_sizes() {
+    // Packed wire sizes must be stable and fit the 250-byte ESP-NOW limit.
+    CHECK_EQ((int)sizeof(fw::DisplayStatusPacket), 45);
+    CHECK_EQ((int)sizeof(fw::DisplayEventPacket), 54);
+    CHECK((int)sizeof(fw::DisplayStatusPacket) <= 250);
+    CHECK((int)sizeof(fw::DisplayEventPacket) <= 250);
+    fw::DisplayStatusPacket s{};
+    s.type = (uint8_t)fw::MsgType::DISP_STATUS;
+    CHECK_EQ((int)s.type, 8);
+    fw::DisplayEventPacket e{};
+    e.type = (uint8_t)fw::MsgType::DISP_EVENT;
+    CHECK_EQ((int)e.type, 9);
+}
+
 int main() {
     RUN(test_command_crc_roundtrip);
     RUN(test_command_crc_detects_tamper);
     RUN(test_channel_in_range);
     RUN(test_ack_crc_roundtrip_and_tamper);
     RUN(test_status_crc_roundtrip_and_tamper);
+    RUN(test_display_packet_sizes);
     return REPORT();
 }
