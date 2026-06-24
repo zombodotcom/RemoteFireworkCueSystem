@@ -234,9 +234,10 @@ static esp_err_t handle_events(httpd_req_t* req) {
         xSemaphoreGive(g_eventMtx);
     }
 
-    char buf[2600];
+    char buf[3200];
     int p = snprintf(buf, sizeof(buf), "{\"lastSeq\":%lu,\"events\":[", (unsigned long)lastSeq);
     for (size_t i = 0; i < n; ++i) {
+        if (p > (int)sizeof(buf) - 120) break;   // leave room for the next event + closing "]}"
         size_t rem = (p < (int)sizeof(buf)) ? sizeof(buf) - (size_t)p : 0;
         // msg is controller-authored (no unescaped quotes/backslashes), safe to inline.
         p += snprintf(buf + p, rem, "%s{\"seq\":%lu,\"t\":%lu,\"sev\":%u,\"msg\":\"%s\"}",

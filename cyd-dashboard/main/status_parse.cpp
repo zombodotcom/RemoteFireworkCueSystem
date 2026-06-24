@@ -90,6 +90,7 @@ bool parseStatus(const char* json, StatusModel& out) {
 }
 
 int parseEvents(const char* json, LogEv* out, int maxOut) {
+    // NOTE: assumes event "msg" strings contain no ']' (controller-authored, fixed format).
     if (!json || maxOut <= 0) return 0;
     const char* p = std::strstr(json, "\"events\"");
     if (!p) return 0;

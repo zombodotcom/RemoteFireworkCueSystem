@@ -50,7 +50,7 @@ void status_client_poll_once(StatusModel& model) {
              (unsigned)model.firedBitmap, model.seqRunning, model.boxPresent);
 }
 
-struct AccumE { char buf[2700]; int len; };
+struct AccumE { char buf[3300]; int len; };
 static esp_err_t on_evt_e(esp_http_client_event_t* e) {
     if (e->event_id == HTTP_EVENT_ON_DATA) {
         AccumE* a = (AccumE*)e->user_data;
