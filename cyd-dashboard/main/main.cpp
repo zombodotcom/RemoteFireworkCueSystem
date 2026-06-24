@@ -3,8 +3,8 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "wifi_sta.h"
-
-static const char* TAG = "cyd";
+#include "status_model.h"
+#include "status_client.h"
 
 extern "C" void app_main(void) {
     esp_err_t e = nvs_flash_init();
@@ -13,8 +13,9 @@ extern "C" void app_main(void) {
         ESP_ERROR_CHECK(nvs_flash_init());
     }
     wifi_sta_start();
+    static StatusModel model;
     while (true) {
-        ESP_LOGI(TAG, "wifi connected: %s", wifi_sta_connected() ? "yes" : "no");
+        if (wifi_sta_connected()) status_client_poll_once(model);
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
