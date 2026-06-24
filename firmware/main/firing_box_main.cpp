@@ -49,6 +49,7 @@ extern "C" void app_main(void) {
     ESP_LOGI(TAG, "firing box %u booted: SAFE, outputs off", cfg.boxId);
 
     uint32_t lastRxMs = 0;
+    uint32_t lastStatusMs = 0;
 
     // SAFETY: the box never calls setSequenceRunning(true) — heartbeat dead-man always active.
     while (true) {
@@ -75,6 +76,21 @@ extern "C" void app_main(void) {
 
         box.setPhysicalSwitch(armSwitch.isOn(), now);   // hardware-authoritative
         box.tick(now);
+
+        // Telemetry push (~750 ms). Read-only; never gates firing/interlock.
+        if (now - lastStatusMs >= 750) {
+            lastStatusMs = now;
+            fw::StatusPacket st{};
+            st.type             = (uint8_t)fw::MsgType::STATUS;
+            st.boxId            = cfg.boxId;
+            st.state            = (box.state() == fw::BoxState::ARMED) ? 1 : 0;
+            st.firedBitmap      = box.firedChannelMask();
+            st.lastFiredChannel = box.lastFiredChannel();
+            st.timestamp        = now;
+            st.crc              = fw::computeCrc(st);
+            link.sendStatus(st);
+        }
+
         bool linkAlive = (now - lastRxMs) < 2000;
         leds.show(box.state(), false /*estopped surfaced via BoxState*/, linkAlive, now);
         vTaskDelay(pdMS_TO_TICKS(20));

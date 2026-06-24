@@ -63,3 +63,7 @@ bool EspNowLink::receive(fw::CommandPacket& out) {
 esp_err_t EspNowLink::sendAck(const fw::AckPacket& ack) {
     return esp_now_send(ctrlMac_, (const uint8_t*)&ack, sizeof(ack));
 }
+
+esp_err_t EspNowLink::sendStatus(const fw::StatusPacket& status) {
+    return esp_now_send(ctrlMac_, (const uint8_t*)&status, sizeof(status));
+}
