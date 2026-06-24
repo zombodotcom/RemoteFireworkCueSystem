@@ -60,6 +60,7 @@ extern "C" void app_main(void) {
     ESP_ERROR_CHECK(web.start(g_cmdQueue, &g_status));
 
     // Control loop: drain cmd queue → drive runner, drain ACKs, tick runner at ~20 ms.
+    static uint32_t lastStatusMs[2] = {0, 0};
     while (true) {
         uint32_t now = static_cast<uint32_t>(esp_timer_get_time() / 1000);
 
@@ -97,6 +98,22 @@ extern "C" void app_main(void) {
         uint32_t ack_id = 0;
         while (tx.receiveAck(ack_id)) {
             link.onAck(ack_id, now);
+        }
+
+        // Drain box telemetry (WiFi task queued it; consume in control loop only).
+        EspNowTransport::StatusReport sr;
+        while (tx.receiveStatus(sr)) {
+            if (sr.boxId < 2) {
+                g_status.boxes[sr.boxId].state            = sr.state;
+                g_status.boxes[sr.boxId].firedBitmap      = sr.firedBitmap;
+                g_status.boxes[sr.boxId].lastFiredChannel = sr.lastFiredChannel;
+                g_status.boxes[sr.boxId].rssi             = sr.rssi;
+                lastStatusMs[sr.boxId] = now;
+            }
+        }
+        for (int b = 0; b < 2; b++) {
+            g_status.boxes[b].linkAlive =
+                (lastStatusMs[b] != 0) && ((now - lastStatusMs[b]) < 1500);
         }
 
         runner.tick(now);

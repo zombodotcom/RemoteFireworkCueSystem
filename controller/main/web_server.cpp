@@ -221,19 +221,29 @@ static esp_err_t handle_status(httpd_req_t* req) {
     bool    seq     = g_status.seqRunning;
     uint8_t lastBox = g_status.lastFailedBox;
 
-    char buf[128];
-    if (lastBox == 0xFF) {
-        snprintf(buf, sizeof(buf),
-            "{\"armed\":%s,\"seqRunning\":%s,\"lastFailedBox\":null}",
-            armed ? "true" : "false",
-            seq   ? "true" : "false");
-    } else {
-        snprintf(buf, sizeof(buf),
-            "{\"armed\":%s,\"seqRunning\":%s,\"lastFailedBox\":%u}",
-            armed ? "true" : "false",
-            seq   ? "true" : "false",
-            static_cast<unsigned>(lastBox));
+    char buf[420];
+    char lastBoxTok[8];
+    if (lastBox == 0xFF) snprintf(lastBoxTok, sizeof(lastBoxTok), "null");
+    else                 snprintf(lastBoxTok, sizeof(lastBoxTok), "%u", lastBox);
+
+    int n = snprintf(buf, sizeof(buf),
+        "{\"armed\":%s,\"seqRunning\":%s,\"lastFailedBox\":%s,\"boxes\":[",
+        armed ? "true" : "false", seq ? "true" : "false", lastBoxTok);
+
+    for (int b = 0; b < 2; b++) {
+        n += snprintf(buf + n, sizeof(buf) - n,
+            "%s{\"id\":%d,\"linkAlive\":%s,\"rssi\":%d,\"state\":%u,"
+            "\"firedBitmap\":%u,\"lastFired\":%d}",
+            b ? "," : "", b,
+            g_status.boxes[b].linkAlive ? "true" : "false",
+            (int)g_status.boxes[b].rssi,
+            (unsigned)g_status.boxes[b].state,
+            (unsigned)g_status.boxes[b].firedBitmap,
+            (g_status.boxes[b].lastFiredChannel == 0xFF)
+                ? -1 : (int)g_status.boxes[b].lastFiredChannel);
     }
+    n += snprintf(buf + n, sizeof(buf) - n, "]}");
+
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_send(req, buf, HTTPD_RESP_USE_STRLEN);
 }

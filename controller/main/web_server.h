@@ -16,12 +16,21 @@ struct UiCommand {
     uint8_t channel;
 };
 
+struct BoxTelemetry {
+    volatile bool     linkAlive        = false;
+    volatile int8_t   rssi             = 0;
+    volatile uint8_t  state            = 0;      // 0 = SAFE, 1 = ARMED
+    volatile uint16_t firedBitmap      = 0;
+    volatile uint8_t  lastFiredChannel = 0xFF;
+};
+
 // Written by control loop each tick; read by status handler.
 // volatile on individual fields — Xtensa single-instruction word reads are atomic.
 struct StatusSnapshot {
     volatile bool    armed;
     volatile bool    seqRunning;
     volatile uint8_t lastFailedBox;   // 0xFF = none
+    BoxTelemetry boxes[2];
 };
 
 class WebServer {
