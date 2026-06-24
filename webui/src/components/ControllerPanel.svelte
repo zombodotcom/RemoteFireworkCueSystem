@@ -5,6 +5,8 @@
   import type { SystemConnection } from "../core/connection";
   import BoxPanel from "./BoxPanel.svelte";
   import TransportControls from "./TransportControls.svelte";
+  import LogPanel from "./LogPanel.svelte";
+  import DiagPanel from "./DiagPanel.svelte";
 
   let conn: SystemConnection | null = null;
 
@@ -69,6 +71,9 @@
     {/each}
   </div>
   <p class="status">t={$snapshot.now}ms · sequence {$snapshot.seqRunning ? "running" : "idle"}</p>
+  <h3 class="sec">Controller activity</h3>
+  <LogPanel />
+  <DiagPanel />
 {:else}
   <p>Loading WASM core…</p>
 {/if}
@@ -76,4 +81,5 @@
 <style>
   .boxes { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
   .status { color: #888; font-family: monospace; }
+  .sec { color: #99a; font-size: 13px; margin: 14px 0 6px; }
 </style>

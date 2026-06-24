@@ -1,10 +1,12 @@
 <script lang="ts">
   import ControllerPanel from "./components/ControllerPanel.svelte";
   import AuthoringPanel from "./components/AuthoringPanel.svelte";
+  import FaultBanner from "./components/FaultBanner.svelte";
   let view: "sim" | "author" = "sim";
 </script>
 
 <main>
+  <FaultBanner />
   <h1>🎆 Firework Simulator</h1>
   <nav>
     <button class:on={view === "sim"} on:click={() => (view = "sim")}>Simulator</button>
