@@ -214,6 +214,42 @@ static esp_err_t handle_run(httpd_req_t* req) {
     return enqueue_cmd(cmd, req);
 }
 
+// ── GET /api/events?since=<seq> ───────────────────────────────────────────
+
+static esp_err_t handle_events(httpd_req_t* req) {
+    // Parse ?since=<seq> (default 0 = whole buffer).
+    uint32_t since = 0;
+    char q[40];
+    if (httpd_req_get_url_query_str(req, q, sizeof(q)) == ESP_OK) {
+        char v[16];
+        if (httpd_query_key_value(q, "since", v, sizeof(v)) == ESP_OK) since = (uint32_t)strtoul(v, nullptr, 10);
+    }
+
+    static ctrl::Event evs[ctrl::EventLog::CAP];   // static: handler task, serialized by httpd
+    size_t n = 0;
+    uint32_t lastSeq = 0;
+    if (xSemaphoreTake(g_eventMtx, pdMS_TO_TICKS(20)) == pdTRUE) {
+        n = g_events.since(since, evs, ctrl::EventLog::CAP);
+        lastSeq = g_events.lastSeq();
+        xSemaphoreGive(g_eventMtx);
+    }
+
+    char buf[2600];
+    int p = snprintf(buf, sizeof(buf), "{\"lastSeq\":%lu,\"events\":[", (unsigned long)lastSeq);
+    for (size_t i = 0; i < n; ++i) {
+        size_t rem = (p < (int)sizeof(buf)) ? sizeof(buf) - (size_t)p : 0;
+        // msg is controller-authored (no unescaped quotes/backslashes), safe to inline.
+        p += snprintf(buf + p, rem, "%s{\"seq\":%lu,\"t\":%lu,\"sev\":%u,\"msg\":\"%s\"}",
+                      i ? "," : "", (unsigned long)evs[i].seq, (unsigned long)evs[i].tMs,
+                      (unsigned)evs[i].sev, evs[i].msg);
+    }
+    size_t rem2 = (p < (int)sizeof(buf)) ? sizeof(buf) - (size_t)p : 0;
+    p += snprintf(buf + p, rem2, "]}");
+
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, buf, HTTPD_RESP_USE_STRLEN);
+}
+
 // ── GET /api/status ────────────────────────────────────────────────────────
 
 static esp_err_t handle_status(httpd_req_t* req) {
@@ -221,8 +257,11 @@ static esp_err_t handle_status(httpd_req_t* req) {
     bool    armed   = g_status.armed;
     bool    seq     = g_status.seqRunning;
     uint8_t lastBox = g_status.lastFailedBox;
+    Diag    d       = g_status.diag;
+    uint8_t fault   = g_status.faultCode;
+    const char* fmsg = (fault==1)?"ESTOP":(fault==2)?"box link lost":(fault==3)?"fire failed":"";
 
-    char buf[420];
+    char buf[640];
     char lastBoxTok[8];
     if (lastBox == 0xFF) snprintf(lastBoxTok, sizeof(lastBoxTok), "null");
     else                 snprintf(lastBoxTok, sizeof(lastBoxTok), "%u", lastBox);
@@ -242,17 +281,25 @@ static esp_err_t handle_status(httpd_req_t* req) {
         size_t rem = (n < (int)sizeof(buf)) ? sizeof(buf) - (size_t)n : 0;
         n += snprintf(buf + n, rem,
             "%s{\"id\":%d,\"linkAlive\":%s,\"rssi\":%d,\"state\":%u,"
-            "\"firedBitmap\":%u,\"lastFired\":%d}",
+            "\"firedBitmap\":%u,\"lastFired\":%d,\"lastHeardMs\":%lu}",
             firstBox ? "" : ",", b,
             box.linkAlive ? "true" : "false",
             (int)box.rssi,
             (unsigned)box.state,
             (unsigned)box.firedBitmap,
-            (box.lastFiredChannel == 0xFF) ? -1 : (int)box.lastFiredChannel);
+            (box.lastFiredChannel == 0xFF) ? -1 : (int)box.lastFiredChannel,
+            (unsigned long)box.lastHeardMs);
         firstBox = false;
     }
     size_t rem2 = (n < (int)sizeof(buf)) ? sizeof(buf) - (size_t)n : 0;
-    n += snprintf(buf + n, rem2, "]}");
+    n += snprintf(buf + n, rem2,
+        "],\"diag\":{\"uptimeMs\":%lu,\"freeHeap\":%lu,\"apClients\":%lu,"
+        "\"fired\":%lu,\"acked\":%lu,\"failed\":%lu,\"retries\":%lu,\"lastAckMs\":%lu},"
+        "\"fault\":{\"active\":%s,\"msg\":\"%s\"}}",
+        (unsigned long)d.uptimeMs, (unsigned long)d.freeHeap, (unsigned long)d.apClients,
+        (unsigned long)d.fired, (unsigned long)d.acked, (unsigned long)d.failed,
+        (unsigned long)d.retries, (unsigned long)d.lastAckMs,
+        fault ? "true" : "false", fmsg);
 
     httpd_resp_set_type(req, "application/json");
     return httpd_resp_send(req, buf, HTTPD_RESP_USE_STRLEN);
@@ -268,7 +315,7 @@ esp_err_t WebServer::start(QueueHandle_t cmdQueue, StatusSnapshot* /*snap*/) {
 
     httpd_config_t config    = HTTPD_DEFAULT_CONFIG();
     config.lru_purge_enable  = true;
-    config.max_uri_handlers  = 16;  // default is 8; we have 9 routes
+    config.max_uri_handlers  = 16;  // default is 8; we have 10 routes
 
     httpd_handle_t server = nullptr;
     esp_err_t ret = httpd_start(&server, &config);
@@ -290,6 +337,7 @@ esp_err_t WebServer::start(QueueHandle_t cmdQueue, StatusSnapshot* /*snap*/) {
         { "/api/fire",      HTTP_POST, handle_fire      },
         { "/api/run",       HTTP_POST, handle_run       },
         { "/api/status",    HTTP_GET,  handle_status    },
+        { "/api/events",    HTTP_GET,  handle_events    },
     };
     for (const auto& r : routes) {
         httpd_uri_t u = {};
