@@ -1,5 +1,6 @@
 import { loadRig, type Rig } from "./wasm";
-import { snapshot, type Snapshot, type BoxView } from "../stores";
+import { snapshot, diag, fault, events as eventsStore, type Snapshot, type BoxView } from "../stores";
+import { mergeEvents } from "../lib/events";
 import { LiveConnection } from "./live_connection";
 
 export interface SystemConnection {
@@ -27,6 +28,7 @@ export class SimConnection implements SystemConnection {
   private nonce = 1;
   private timer: ReturnType<typeof setInterval> | null = null;
   private connected = true;
+  private evSeq = 0;
 
   static async create(): Promise<SimConnection> {
     const c = new SimConnection();
@@ -38,15 +40,20 @@ export class SimConnection implements SystemConnection {
 
   setSwitch(box: number, on: boolean) { this.rig.setSwitch(box, on, this.now); this.publish(); }
   heartbeat() { this.rig.heartbeat(this.now); }
-  arm() { this.rig.arm(this.nonce++, this.now); this.publish(); }
-  disarm() { this.rig.disarm(this.now); this.publish(); }
-  estop() { this.rig.estop(this.now); this.publish(); }
+  arm() { this.rig.arm(this.nonce++, this.now); this.emit(1, "ARM -> box0"); this.publish(); }
+  disarm() { this.rig.disarm(this.now); this.emit(0, "DISARM"); this.publish(); }
+  estop() { this.rig.estop(this.now); this.emit(2, "ESTOP"); this.publish(); }
   clearEstop() { this.rig.clearEstop(this.now); this.publish(); }
-  fire(box: number, ch: number) { this.rig.fire(box, ch, this.now); this.publish(); }
+  fire(box: number, ch: number) { this.rig.fire(box, ch, this.now); this.emit(0, `FIRE ch${ch} -> box${box}`); this.publish(); }
   loadSequence(triples: number[]) { return this.rig.loadSequence(triples); }
-  startSequence() { this.rig.startSequence(this.now); this.publish(); }
+  startSequence() { this.rig.startSequence(this.now); this.emit(0, "SEQ start"); this.publish(); }
   stopSequence() { this.rig.stopSequence(this.now); this.publish(); }
   setConnected(on: boolean) { this.connected = on; }
+
+  private emit(sev: 0 | 1 | 2, msg: string) {
+    const ev = { seq: ++this.evSeq, t: this.now, sev, msg };
+    eventsStore.update((prev) => mergeEvents(prev, [ev]));
+  }
 
   start() {
     if (this.timer) return;
@@ -76,6 +83,12 @@ export class SimConnection implements SystemConnection {
     }
     const snap: Snapshot = { now: this.now, seqRunning: this.rig.seqRunning(), boxes };
     snapshot.set(snap);
+    const anyEstop = this.rig.boxEstopped(0) || this.rig.boxEstopped(1);
+    diag.set({
+      uptimeMs: this.now, freeHeap: 140000, apClients: this.connected ? 1 : 0,
+      fired: 0, acked: 0, failed: 0, retries: 0, lastAckMs: 0,
+    });
+    fault.set(anyEstop ? { active: true, msg: "ESTOP" } : { active: false, msg: "" });
   }
 }
 
