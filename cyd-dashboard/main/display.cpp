@@ -62,8 +62,8 @@ lv_display_t* display_init(void) {
     disp_cfg.panel_handle = panel;
     disp_cfg.buffer_size = LCD_H * 40;
     disp_cfg.double_buffer = true;
-    disp_cfg.hres = LCD_H;
-    disp_cfg.vres = LCD_V;
+    disp_cfg.hres = LCD_V;   // landscape: 320 pixels wide
+    disp_cfg.vres = LCD_H;   // landscape: 240 pixels tall
     disp_cfg.rotation.swap_xy = true;    // landscape 320x240
     disp_cfg.rotation.mirror_x = true;
     disp_cfg.rotation.mirror_y = false;
