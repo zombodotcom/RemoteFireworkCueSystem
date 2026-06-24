@@ -2,6 +2,19 @@
 #include "expander_codec.h"
 #include <cstdint>
 
+// ---- Local pairing override ----------------------------------------------
+// The controller's SoftAP MAC (printed in the controller boot log) lives in
+// git-ignored `pairing.h` (PAIR_CONTROLLER_MAC). Copy pairing.example.h ->
+// pairing.h per setup. Absent => canonical default below. Never commit pairing.h.
+#if defined(__has_include)
+#  if __has_include("pairing.h")
+#    include "pairing.h"
+#  endif
+#endif
+#ifndef PAIR_CONTROLLER_MAC
+#  define PAIR_CONTROLLER_MAC {0xb0,0xcb,0xd8,0x89,0x9e,0x69}
+#endif
+
 // ---- Deferred polarity decision (finalize after the SSR polarity test, Task 6) ----
 // Safe default until tested: active-low boards (all-OFF = all bits HIGH).
 namespace board {
@@ -16,6 +29,6 @@ constexpr int ARM_SWITCH_GPIO = 4;            // input w/ pull; switch closes to
 constexpr int STATUS_LED_GPIO = 5;            // addressable LED data
 constexpr int STATUS_LED_COUNT = 1;
 constexpr uint8_t THIS_BOX_ID = 0;            // box 1 = 0, box 2 = 1 (flash per box)
-// Controller MAC the box accepts traffic from (fill in from the controller's printed MAC).
-constexpr uint8_t CONTROLLER_MAC[6] = {0xb0,0xcb,0xd8,0x89,0x9e,0x69}; // controller SoftAP MAC
+// Controller MAC the box accepts traffic from (its SoftAP MAC; override in pairing.h).
+constexpr uint8_t CONTROLLER_MAC[6] = PAIR_CONTROLLER_MAC;
 }

@@ -19,7 +19,15 @@ static const char* TAG = "espnow_rx";
 // MAC-filtering stops interference + casual spoofing; a determined attacker who
 // spoofs this MAC is out of scope here (would need a pre-shared HMAC/LMK — see
 // NEXT-STEPS). Must match controller SoftAP MAC (firmware board_config CONTROLLER_MAC).
-static const uint8_t kControllerMac[6] = {0xb0,0xcb,0xd8,0x89,0x9e,0x69};
+#if defined(__has_include)
+#  if __has_include("pairing.h")
+#    include "pairing.h"
+#  endif
+#endif
+#ifndef PAIR_CONTROLLER_MAC
+#  define PAIR_CONTROLLER_MAC {0xb0,0xcb,0xd8,0x89,0x9e,0x69}
+#endif
+static const uint8_t kControllerMac[6] = PAIR_CONTROLLER_MAC;
 
 static SemaphoreHandle_t s_mtx;
 static StatusModel       s_model;        // latest decoded status
